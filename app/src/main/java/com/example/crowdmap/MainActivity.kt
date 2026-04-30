@@ -2,7 +2,6 @@ package com.example.crowdmap
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
