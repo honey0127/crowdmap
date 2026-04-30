@@ -1,0 +1,175 @@
+#include <iostream>
+#include <thread>
+#include <string>
+#include <sstream>
+#include <memory>
+
+#ifdef _WIN32
+    #include <winsock2.h>
+    #pragma comment(lib, "ws2_32.lib")
+    typedef int socklen_t;
+#else
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
+    #include <unistd.h>
+    #define INVALID_SOCKET -1
+    #define SOCKET_ERROR -1
+    #define closesocket close
+    typedef int SOCKET;
+#endif
+
+#include "ThreadPool.h"
+#include "ZoneMapper.h"
+#include "UserCountManager.h"
+#include "CongestionCalculator.h"
+
+// 글로벌 객체들
+std::unique_ptr<ThreadPool> threadPool;
+ZoneMapper zoneMapper;
+UserCountManager userCountManager;
+CongestionCalculator congestionCalculator;
+
+const int PORT = 5000;
+const int THREAD_POOL_SIZE = 4;
+
+// 클라이언트 요청 처리 함수
+void handleClient(SOCKET clientSocket, int clientId) {
+    char buffer[256] = {0};
+    
+    try {
+        // 클라이언트로부터 데이터 수신
+        int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+        
+        if (bytesReceived <= 0) {
+            std::cerr << "Client " << clientId << " disconnected or error\n";
+            closesocket(clientSocket);
+            return;
+        }
+        
+        buffer[bytesReceived] = '\0';
+        
+        // 데이터 파싱: "userId,latitude,longitude" 형식
+        std::istringstream iss(buffer);
+        int userId;
+        double latitude, longitude;
+        char comma;
+        
+        if (!(iss >> userId >> comma >> latitude >> comma >> longitude)) {
+            std::cerr << "Invalid data format from client " << clientId << "\n";
+            closesocket(clientSocket);
+            return;
+        }
+        
+        std::cout << "[Client " << clientId << "] Received: userId=" << userId 
+                  << ", lat=" << latitude << ", lng=" << longitude << "\n";
+        
+        // 1. Zone 변환
+        int zoneId = zoneMapper.coordinateToZoneId(latitude, longitude);
+        std::cout << "[Client " << clientId << "] Zone ID: " << zoneId << "\n";
+        
+        // 2. 사용자 수 업데이트
+        userCountManager.updateUserLocation(userId, zoneId);
+        int zoneCount = userCountManager.getZoneCount(zoneId);
+        std::cout << "[Client " << clientId << "] Zone count: " << zoneCount << "\n";
+        
+        // 3. 혼잡도 계산
+        CongestionResult result = congestionCalculator.calculateCongestion(zoneCount);
+        std::cout << "[Client " << clientId << "] Congestion: " << result.levelString() 
+                  << " (" << result.ratio << ")\n";
+        
+        // 4. 응답 생성 및 전송
+        std::string response = std::string(result.levelString()) + "|" + std::to_string(result.ratio);
+        
+        if (send(clientSocket, response.c_str(), response.length(), 0) == SOCKET_ERROR) {
+            std::cerr << "Send failed for client " << clientId << "\n";
+        }
+        
+        std::cout << "[Client " << clientId << "] Response sent: " << response << "\n\n";
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Exception in handleClient: " << e.what() << "\n";
+    }
+    
+    closesocket(clientSocket);
+}
+
+// 메인 서버 루프
+void runServer() {
+    SOCKET serverSocket;
+    struct sockaddr_in serverAddr, clientAddr;
+    socklen_t clientAddrLen = sizeof(clientAddr);
+    
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cerr << "WSAStartup failed\n";
+        return;
+    }
+#endif
+    
+    // 서버 소켓 생성
+    serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (serverSocket == INVALID_SOCKET) {
+        std::cerr << "Socket creation failed\n";
+        return;
+    }
+    
+    // 서버 주소 설정
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(PORT);
+    
+    // 바인드
+    if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cerr << "Bind failed\n";
+        closesocket(serverSocket);
+        return;
+    }
+    
+    // 리스닝 시작
+    if (listen(serverSocket, 5) == SOCKET_ERROR) {
+        std::cerr << "Listen failed\n";
+        closesocket(serverSocket);
+        return;
+    }
+    
+    std::cout << "Server started on port " << PORT << "\n";
+    std::cout << "Waiting for connections...\n\n";
+    
+    int clientIdCounter = 1;
+    
+    // 클라이언트 연결 수락 루프
+    while (true) {
+        SOCKET clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrLen);
+        
+        if (clientSocket == INVALID_SOCKET) {
+            std::cerr << "Accept failed\n";
+            continue;
+        }
+        
+        int currentClientId = clientIdCounter++;
+        std::cout << "Client " << currentClientId << " connected from " 
+                  << inet_ntoa(clientAddr.sin_addr) << "\n";
+        
+        // ThreadPool에 작업 enqueue
+        threadPool->enqueue([clientSocket, currentClientId]() {
+            handleClient(clientSocket, currentClientId);
+        });
+    }
+    
+    closesocket(serverSocket);
+}
+
+int main() {
+    std::cout << "=== CrowdMap Server (Minimal Structure) ===\n\n";
+    
+    // ThreadPool 초기화
+    threadPool = std::make_unique<ThreadPool>(THREAD_POOL_SIZE);
+    std::cout << "ThreadPool initialized with " << THREAD_POOL_SIZE << " workers\n\n";
+    
+    // 서버 시작
+    runServer();
+    
+    return 0;
+}
