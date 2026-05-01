@@ -1,3 +1,3 @@
-/home/dlxogjs4326/crowdmap/build/CMakeFiles/crowdmap_server.dir
-/home/dlxogjs4326/crowdmap/build/CMakeFiles/edit_cache.dir
-/home/dlxogjs4326/crowdmap/build/CMakeFiles/rebuild_cache.dir
+/home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles/crowdmap_server.dir
+/home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles/edit_cache.dir
+/home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles/rebuild_cache.dir

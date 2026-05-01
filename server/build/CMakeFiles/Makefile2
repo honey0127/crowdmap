@@ -54,10 +54,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/dlxogjs4326/crowdmap
+CMAKE_SOURCE_DIR = /home/dlxogjs4326/crowdmap-repo/server
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/dlxogjs4326/crowdmap/build
+CMAKE_BINARY_DIR = /home/dlxogjs4326/crowdmap-repo/server/build
 
 #=============================================================================
 # Directory level rules for the build root directory
@@ -81,14 +81,14 @@ clean: CMakeFiles/crowdmap_server.dir/clean
 CMakeFiles/crowdmap_server.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/crowdmap_server.dir/build.make CMakeFiles/crowdmap_server.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/crowdmap_server.dir/build.make CMakeFiles/crowdmap_server.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/dlxogjs4326/crowdmap/build/CMakeFiles --progress-num=1,2,3,4,5,6,7 "Built target crowdmap_server"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles --progress-num=1,2,3,4,5,6,7 "Built target crowdmap_server"
 .PHONY : CMakeFiles/crowdmap_server.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/crowdmap_server.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/dlxogjs4326/crowdmap/build/CMakeFiles 7
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles 7
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/crowdmap_server.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/dlxogjs4326/crowdmap/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles 0
 .PHONY : CMakeFiles/crowdmap_server.dir/rule
 
 # Convenience name for target.
