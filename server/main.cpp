@@ -10,6 +10,8 @@
 #include <vector>
 #include "CacheManager.h"
 #include "SKTClient.h"
+#include "SlidingWindow.h"
+#include "DeadSessionSweeper.h"
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -41,6 +43,7 @@ std::unique_ptr<FirebaseClient> firebaseClient;
 CacheManager cacheManager(30);
 const std::string SKT_APP_KEY = "wY2D9YeJY929eRpkDj3OradYQcHhn5pM8nEyCemG";
 std::unique_ptr<SKTClient> sktClient;
+SlidingWindow slidingWindow(300);  // 5분 윈도우 (300초)
 
 // SKT 혼잡도 캐시
 std::map<std::string, PlaceCongestion> sktCongestionCache;
@@ -109,7 +112,9 @@ void handleClient(SOCKET clientSocket, int clientId) {
 
             // 1. Zone 변환
             int zoneId = zoneMapper.coordinateToZoneId(latitude, longitude);
+            slidingWindow.addEvent(userId, zoneId);
             std::cout << "[Client " << clientId << "] Zone ID: " << zoneId << "\n";
+
 
             // 2. 사용자 수 업데이트
             userCountManager.updateUserLocation(userId, zoneId);
@@ -224,6 +229,8 @@ int main() {
 
     // SKT 주기적 호출 스레드 시작
     std::thread sktThread(sktUpdateLoop);
+    DeadSessionSweeper deadSweeper(userCountManager, slidingWindow, 300);
+    deadSweeper.start();
     sktThread.detach();
 
     // 서버 시작
