@@ -36,6 +36,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private var userId = 1001
     private var isTracking = false
     private var currentLatLng: LatLng? = null
+    // 이전 원/마커 저장 변수 추가 (클래스 상단에)
+    private var selectedCircle: com.google.android.gms.maps.model.Circle? = null
+    private var selectedMarker: com.google.android.gms.maps.model.Marker? = null
 
     companion object {
         const val LOCATION_PERMISSION_REQUEST = 1001
@@ -81,6 +84,33 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             googleMap.isMyLocationEnabled = true
+        }
+        googleMap.setOnMapClickListener { latLng ->
+            lifecycleScope.launch {
+                val congestion = serverClient.getCongestion(latLng.latitude, latLng.longitude)
+                congestion?.let {
+                    // 이전 원/마커 제거
+                    selectedCircle?.remove()
+                    selectedMarker?.remove()
+
+                    // 새 원 그리기 (투명 + 테두리만)
+                    selectedCircle = googleMap.addCircle(
+                        CircleOptions()
+                            .center(latLng)
+                            .radius(200.0)
+                            .fillColor(it.color() and 0x1AFFFFFF.toInt())      // 완전 투명
+                            .strokeColor(it.color())       // 테두리만 혼잡도 색
+                            .strokeWidth(5f)               // 테두리 두께
+                    )
+
+                    // 새 마커 추가
+                    selectedMarker = googleMap.addMarker(
+                        MarkerOptions()
+                            .position(latLng)
+                            .title("혼잡도: ${it.levelKorean()} (${(it.ratio * 100).toInt()}%)")
+                    )
+                }
+            }
         }
     }
 
@@ -140,7 +170,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             CircleOptions()
                 .center(position)
                 .radius(200.0)           // 반경 200m
-                .fillColor(data.color() and 0x80FFFFFF.toInt())  // 반투명
+                .fillColor(data.color() and 0x1AFFFFFF.toInt())  // 반투명
                 .strokeColor(data.color())
                 .strokeWidth(3f)
         )
