@@ -11,14 +11,14 @@ import java.net.Socket
 class ServerClient {
 
     companion object {
-        //const val SERVER_IP = "172.20.127.144"  // Wi-Fi IP
-        const val SERVER_IP = "10.0.2.2"  // 에뮬레이터용
-        const val SERVER_PORT = 5001
+        const val SERVER_IP = "0.tcp.jp.ngrok.io"
+        const val SERVER_PORT = 17108
     }
 
     private var socket: Socket? = null
     private var writer: PrintWriter? = null
     private var reader: BufferedReader? = null
+
 
     // 서버 연결
     suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
@@ -31,6 +31,35 @@ class ServerClient {
         } catch (e: Exception) {
             println("[ServerClient] 연결 실패: ${e.message}")
             false
+        }
+    }
+    // 특정 위치의 혼잡도만 조회 (userId=0으로 구분)
+    suspend fun getCongestion(
+        latitude: Double,
+        longitude: Double
+    ): CongestionData? = withContext(Dispatchers.IO) {
+        try {
+            val message = "0,$latitude,$longitude\n"
+            writer?.print(message)
+            writer?.flush()
+
+            val buffer = CharArray(256)
+            val length = reader?.read(buffer) ?: -1
+            val response = if (length > 0) String(buffer, 0, length).trim() else null
+
+            response?.let {
+                val parts = it.split("|")
+                if (parts.size == 2) {
+                    CongestionData(
+                        level = parts[0].trim(),
+                        ratio = parts[1].trim().toDoubleOrNull() ?: 0.0,
+                        zoneId = 0
+                    )
+                } else null
+            }
+        } catch (e: Exception) {
+            println("[ServerClient] 조회 실패: ${e.message}")
+            null
         }
     }
 
