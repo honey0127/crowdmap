@@ -11,8 +11,8 @@ import java.net.Socket
 class ServerClient {
 
     companion object {
-        const val SERVER_IP = "0.tcp.jp.ngrok.io"
-        const val SERVER_PORT = 17108
+        const val SERVER_IP = "34.22.82.9"
+        const val SERVER_PORT = 5001
     }
 
     private var socket: Socket? = null

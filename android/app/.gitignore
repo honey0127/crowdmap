@@ -1,1 +1,7 @@
-/build
+# 예시: 무시해야 할 목록
+node_modules/
+build/
+.dart_tool/
+.config/
+*.log
+.git-credentials/build
