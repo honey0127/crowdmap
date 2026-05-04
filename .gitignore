@@ -13,3 +13,8 @@
 .externalNativeBuild
 .cxx
 local.properties
+.idea/
+app/build/
+*.tab
+*.keystream
+*.len
