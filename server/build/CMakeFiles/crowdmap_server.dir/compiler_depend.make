@@ -966,8 +966,10 @@ CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o: /home/dlxogjs4326/crowdmap-repo
 CMakeFiles/crowdmap_server.dir/main.cpp.o: /home/dlxogjs4326/crowdmap-repo/server/main.cpp \
   /home/dlxogjs4326/crowdmap-repo/server/CacheManager.h \
   /home/dlxogjs4326/crowdmap-repo/server/CongestionCalculator.h \
+  /home/dlxogjs4326/crowdmap-repo/server/CongestionRouter.h \
+  /home/dlxogjs4326/crowdmap-repo/server/ExternalCongestionClient.h \
   /home/dlxogjs4326/crowdmap-repo/server/FirebaseClient.h \
-  /home/dlxogjs4326/crowdmap-repo/server/SKTClient.h \
+  /home/dlxogjs4326/crowdmap-repo/server/SeoulCityDataClient.h \
   /home/dlxogjs4326/crowdmap-repo/server/ThreadPool.h \
   /home/dlxogjs4326/crowdmap-repo/server/UserCountManager.h \
   /home/dlxogjs4326/crowdmap-repo/server/ZoneMapper.h \
@@ -1397,9 +1399,11 @@ CMakeFiles/crowdmap_server.dir/main.cpp.o: /home/dlxogjs4326/crowdmap-repo/serve
 
 /home/dlxogjs4326/crowdmap-repo/server/ZoneMapper.h:
 
-/home/dlxogjs4326/crowdmap-repo/server/SKTClient.h:
+/home/dlxogjs4326/crowdmap-repo/server/SeoulCityDataClient.h:
 
 /home/dlxogjs4326/crowdmap-repo/server/FirebaseClient.h:
+
+/home/dlxogjs4326/crowdmap-repo/server/CongestionRouter.h:
 
 /home/dlxogjs4326/crowdmap/ZoneMapper.cpp:
 
@@ -1716,6 +1720,8 @@ CMakeFiles/crowdmap_server.dir/main.cpp.o: /home/dlxogjs4326/crowdmap-repo/serve
 /usr/include/stdint.h:
 
 /usr/include/endian.h:
+
+/home/dlxogjs4326/crowdmap-repo/server/ExternalCongestionClient.h:
 
 /usr/include/x86_64-linux-gnu/bits/uintn-identity.h:
 

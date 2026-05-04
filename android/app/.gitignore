@@ -4,4 +4,4 @@ build/
 .dart_tool/
 .config/
 *.log
-.git-credentials/build
+.git-credentials/buildx`
