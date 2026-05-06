@@ -1,11 +1,11 @@
 package com.example.crowdmap
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var tvCongestion: TextView
     private lateinit var btnConnect: Button
     private lateinit var btnStart: Button
+    private lateinit var fabMyLocation: com.google.android.material.floatingactionbutton.FloatingActionButton
 
     private var userId = 1001
     private var isTracking = false
@@ -55,6 +56,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         tvCongestion = findViewById(R.id.tvCongestion)
         btnConnect   = findViewById(R.id.btnConnect)
         btnStart     = findViewById(R.id.btnStart)
+        fabMyLocation = findViewById(R.id.fabMyLocation)
 
         // 지도 초기화
         val mapFragment = supportFragmentManager
@@ -67,6 +69,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         btnConnect.setOnClickListener { connectToServer() }
         btnStart.setOnClickListener   { toggleTracking() }
+        fabMyLocation.setOnClickListener {
+            currentLatLng?.let {
+                googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 16f))
+            }
+        }
 
         requestLocationPermission()
     }
@@ -79,44 +86,50 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val daegu = LatLng(35.8714, 128.6014)
         googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(daegu, 14f))
 
-        // 내 위치 버튼 표시
+        // 내 위치 표시 설정 (버튼은 끄고 레이어만 켬)
         if (ContextCompat.checkSelfPermission(
                 this, Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             googleMap.isMyLocationEnabled = true
+            googleMap.uiSettings.isMyLocationButtonEnabled = false // 기본 버튼 숨기기
         }
         googleMap.setOnMapClickListener { latLng ->
-            if (!serverClient.isConnected()) {
-                Toast.makeText(this, "먼저 서버에 연결하세요", Toast.LENGTH_SHORT).show()
-                return@setOnMapClickListener
-            }
             lifecycleScope.launch {
-                val congestion = serverClient.getCongestion(latLng.latitude, latLng.longitude)
-                if (congestion == null) {
-                    Toast.makeText(this@MainActivity, "혼잡도 데이터를 받지 못했습니다", Toast.LENGTH_SHORT).show()
-                    return@launch
+                // 서버 연결 확인 및 자동 재연결
+                if (!serverClient.isConnected()) {
+                    tvStatus.text = "서버 연결 시도 중..."
+                    val connected = serverClient.connect()
+                    if (!connected) {
+                        tvStatus.text = "❌ 서버 연결 실패"
+                        return@launch
+                    }
+                    tvStatus.text = "✅ 서버 연결됨"
                 }
-                // 이전 원/마커 제거
-                selectedCircle?.remove()
-                selectedMarker?.remove()
 
-                // 새 원 그리기 (반투명 채우기 + 테두리)
-                selectedCircle = googleMap.addCircle(
-                    CircleOptions()
-                        .center(latLng)
-                        .radius(200.0)
-                        .fillColor((congestion.color() and 0x00FFFFFF) or 0x4D000000)  // 30% 불투명
-                        .strokeColor(congestion.color())
-                        .strokeWidth(5f)
-                )
+                val congestion = serverClient.getCongestion(latLng.latitude, latLng.longitude)
+                congestion?.let {
+                    // 이전 원/마커 제거
+                    selectedCircle?.remove()
+                    selectedMarker?.remove()
 
-                // 새 마커 추가
-                selectedMarker = googleMap.addMarker(
-                    MarkerOptions()
-                        .position(latLng)
-                        .title("혼잡도: ${congestion.levelKorean()} (${(congestion.ratio * 100).toInt()}%)")
-                )
+                    // 새 원 그리기 (투명 + 테두리만)
+                    selectedCircle = googleMap.addCircle(
+                        CircleOptions()
+                            .center(latLng)
+                            .radius(200.0)
+                            .fillColor(it.color() and 0x1AFFFFFF.toInt())      // 완전 투명
+                            .strokeColor(it.color())       // 테두리만 혼잡도 색
+                            .strokeWidth(5f)               // 테두리 두께
+                    )
+
+                    // 새 마커 추가
+                    selectedMarker = googleMap.addMarker(
+                        MarkerOptions()
+                            .position(latLng)
+                            .title("혼잡도: ${it.levelKorean()} (${(it.ratio * 100).toInt()}%)")
+                    )
+                }
             }
         }
     }
@@ -177,7 +190,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             CircleOptions()
                 .center(position)
                 .radius(200.0)           // 반경 200m
-                .fillColor((data.color() and 0x00FFFFFF) or 0x4D000000)  // 30% 불투명
+                .fillColor(data.color() and 0x1AFFFFFF.toInt())  // 반투명
                 .strokeColor(data.color())
                 .strokeWidth(3f)
         )
@@ -189,6 +202,33 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 .title("혼잡도: ${data.levelKorean()}")
                 .snippet("${(data.ratio * 100).toInt()}%")
         )
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun enableMyLocation() {
+        if (hasLocationPermission()) {
+            googleMap.isMyLocationEnabled = true
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_PERMISSION_REQUEST) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                enableMyLocation()
+                startTracking()
+            }
+        }
     }
 
     private fun requestLocationPermission() {

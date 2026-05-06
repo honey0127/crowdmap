@@ -1,8 +1,8 @@
-import java.util.Properties
+    import java.util.Properties
 
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    id("com.android.application") // 버전 정보를 빼고 ID만 적습니다.
+    id("org.jetbrains.kotlin.android")
 }
 
 val localProperties = Properties().apply {

@@ -22,8 +22,8 @@ class CrowdLocationManager(private val context: Context) {
     private var lastLocation: Location? = null
 
     companion object {
-        const val MIN_DISTANCE_METERS = 50f  // 50m 이상 이동 시 업데이트
-        const val UPDATE_INTERVAL_MS = 30000L // 30초마다 업데이트
+        const val MIN_DISTANCE_METERS = 10f  // 10m 이상 이동 시 업데이트
+        const val UPDATE_INTERVAL_MS = 5000L // 5초마다 업데이트
     }
 
     @SuppressLint("MissingPermission")

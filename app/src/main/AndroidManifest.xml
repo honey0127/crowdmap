@@ -20,7 +20,7 @@
         android:theme="@style/Theme.CrowdMap">
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyCzG9WISxXy7e8EZ-YCf5XtVbpSfX4V9SA"/>
+            android:value="${MAPS_API_KEY}"/>
         <activity
             android:name=".MainActivity"
             android:exported="true">
