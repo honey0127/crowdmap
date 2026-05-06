@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/dlxogjs4326/crowdmap-repo/server
+CMAKE_SOURCE_DIR = /home/dlxogjs4326/crowdmap/server
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/dlxogjs4326/crowdmap-repo/server/build
+CMAKE_BINARY_DIR = /home/dlxogjs4326/crowdmap/server/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/crowdmap_server.dir/depend.make
@@ -70,88 +70,116 @@ include CMakeFiles/crowdmap_server.dir/progress.make
 include CMakeFiles/crowdmap_server.dir/flags.make
 
 CMakeFiles/crowdmap_server.dir/main.cpp.o: CMakeFiles/crowdmap_server.dir/flags.make
-CMakeFiles/crowdmap_server.dir/main.cpp.o: /home/dlxogjs4326/crowdmap-repo/server/main.cpp
+CMakeFiles/crowdmap_server.dir/main.cpp.o: /home/dlxogjs4326/crowdmap/server/main.cpp
 CMakeFiles/crowdmap_server.dir/main.cpp.o: CMakeFiles/crowdmap_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/crowdmap_server.dir/main.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/main.cpp.o -MF CMakeFiles/crowdmap_server.dir/main.cpp.o.d -o CMakeFiles/crowdmap_server.dir/main.cpp.o -c /home/dlxogjs4326/crowdmap-repo/server/main.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/crowdmap_server.dir/main.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/main.cpp.o -MF CMakeFiles/crowdmap_server.dir/main.cpp.o.d -o CMakeFiles/crowdmap_server.dir/main.cpp.o -c /home/dlxogjs4326/crowdmap/server/main.cpp
 
 CMakeFiles/crowdmap_server.dir/main.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/crowdmap_server.dir/main.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap-repo/server/main.cpp > CMakeFiles/crowdmap_server.dir/main.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap/server/main.cpp > CMakeFiles/crowdmap_server.dir/main.cpp.i
 
 CMakeFiles/crowdmap_server.dir/main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/crowdmap_server.dir/main.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap-repo/server/main.cpp -o CMakeFiles/crowdmap_server.dir/main.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap/server/main.cpp -o CMakeFiles/crowdmap_server.dir/main.cpp.s
 
 CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o: CMakeFiles/crowdmap_server.dir/flags.make
-CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o: /home/dlxogjs4326/crowdmap-repo/server/ThreadPool.cpp
+CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o: /home/dlxogjs4326/crowdmap/server/ThreadPool.cpp
 CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o: CMakeFiles/crowdmap_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o -MF CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o.d -o CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o -c /home/dlxogjs4326/crowdmap-repo/server/ThreadPool.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o -MF CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o.d -o CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o -c /home/dlxogjs4326/crowdmap/server/ThreadPool.cpp
 
 CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap-repo/server/ThreadPool.cpp > CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap/server/ThreadPool.cpp > CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.i
 
 CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap-repo/server/ThreadPool.cpp -o CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap/server/ThreadPool.cpp -o CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.s
 
 CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o: CMakeFiles/crowdmap_server.dir/flags.make
-CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o: /home/dlxogjs4326/crowdmap-repo/server/ZoneMapper.cpp
+CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o: /home/dlxogjs4326/crowdmap/server/ZoneMapper.cpp
 CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o: CMakeFiles/crowdmap_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o -MF CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o.d -o CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o -c /home/dlxogjs4326/crowdmap-repo/server/ZoneMapper.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o -MF CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o.d -o CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o -c /home/dlxogjs4326/crowdmap/server/ZoneMapper.cpp
 
 CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap-repo/server/ZoneMapper.cpp > CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap/server/ZoneMapper.cpp > CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.i
 
 CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap-repo/server/ZoneMapper.cpp -o CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap/server/ZoneMapper.cpp -o CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.s
 
 CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o: CMakeFiles/crowdmap_server.dir/flags.make
-CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o: /home/dlxogjs4326/crowdmap-repo/server/UserCountManager.cpp
+CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o: /home/dlxogjs4326/crowdmap/server/UserCountManager.cpp
 CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o: CMakeFiles/crowdmap_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o -MF CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o.d -o CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o -c /home/dlxogjs4326/crowdmap-repo/server/UserCountManager.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o -MF CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o.d -o CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o -c /home/dlxogjs4326/crowdmap/server/UserCountManager.cpp
 
 CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap-repo/server/UserCountManager.cpp > CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap/server/UserCountManager.cpp > CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.i
 
 CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap-repo/server/UserCountManager.cpp -o CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap/server/UserCountManager.cpp -o CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.s
 
 CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o: CMakeFiles/crowdmap_server.dir/flags.make
-CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o: /home/dlxogjs4326/crowdmap-repo/server/CongestionCalculator.cpp
+CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o: /home/dlxogjs4326/crowdmap/server/CongestionCalculator.cpp
 CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o: CMakeFiles/crowdmap_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o -MF CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o.d -o CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o -c /home/dlxogjs4326/crowdmap-repo/server/CongestionCalculator.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o -MF CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o.d -o CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o -c /home/dlxogjs4326/crowdmap/server/CongestionCalculator.cpp
 
 CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap-repo/server/CongestionCalculator.cpp > CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap/server/CongestionCalculator.cpp > CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.i
 
 CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap-repo/server/CongestionCalculator.cpp -o CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap/server/CongestionCalculator.cpp -o CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.s
 
 CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o: CMakeFiles/crowdmap_server.dir/flags.make
-CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o: /home/dlxogjs4326/crowdmap-repo/server/FirebaseClient.cpp
+CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o: /home/dlxogjs4326/crowdmap/server/FirebaseClient.cpp
 CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o: CMakeFiles/crowdmap_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o -MF CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o.d -o CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o -c /home/dlxogjs4326/crowdmap-repo/server/FirebaseClient.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o -MF CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o.d -o CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o -c /home/dlxogjs4326/crowdmap/server/FirebaseClient.cpp
 
 CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap-repo/server/FirebaseClient.cpp > CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap/server/FirebaseClient.cpp > CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.i
 
 CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap-repo/server/FirebaseClient.cpp -o CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap/server/FirebaseClient.cpp -o CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.s
+
+CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o: CMakeFiles/crowdmap_server.dir/flags.make
+CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o: /home/dlxogjs4326/crowdmap/server/SlidingWindow.cpp
+CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o: CMakeFiles/crowdmap_server.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o -MF CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o.d -o CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o -c /home/dlxogjs4326/crowdmap/server/SlidingWindow.cpp
+
+CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap/server/SlidingWindow.cpp > CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.i
+
+CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap/server/SlidingWindow.cpp -o CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.s
+
+CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o: CMakeFiles/crowdmap_server.dir/flags.make
+CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o: /home/dlxogjs4326/crowdmap/server/DeadSessionSweeper.cpp
+CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o: CMakeFiles/crowdmap_server.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/dlxogjs4326/crowdmap/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o -MF CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o.d -o CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o -c /home/dlxogjs4326/crowdmap/server/DeadSessionSweeper.cpp
+
+CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/dlxogjs4326/crowdmap/server/DeadSessionSweeper.cpp > CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.i
+
+CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/dlxogjs4326/crowdmap/server/DeadSessionSweeper.cpp -o CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.s
 
 # Object files for target crowdmap_server
 crowdmap_server_OBJECTS = \
@@ -160,7 +188,9 @@ crowdmap_server_OBJECTS = \
 "CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o" \
 "CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o" \
 "CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o" \
-"CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o"
+"CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o" \
+"CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o" \
+"CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o"
 
 # External object files for target crowdmap_server
 crowdmap_server_EXTERNAL_OBJECTS =
@@ -171,10 +201,12 @@ crowdmap_server: CMakeFiles/crowdmap_server.dir/ZoneMapper.cpp.o
 crowdmap_server: CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o
 crowdmap_server: CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o
 crowdmap_server: CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o
+crowdmap_server: CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o
+crowdmap_server: CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o
 crowdmap_server: CMakeFiles/crowdmap_server.dir/build.make
 crowdmap_server: /usr/lib/x86_64-linux-gnu/libcurl.so
 crowdmap_server: CMakeFiles/crowdmap_server.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Linking CXX executable crowdmap_server"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/dlxogjs4326/crowdmap/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Linking CXX executable crowdmap_server"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/crowdmap_server.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -186,6 +218,6 @@ CMakeFiles/crowdmap_server.dir/clean:
 .PHONY : CMakeFiles/crowdmap_server.dir/clean
 
 CMakeFiles/crowdmap_server.dir/depend:
-	cd /home/dlxogjs4326/crowdmap-repo/server/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/dlxogjs4326/crowdmap-repo/server /home/dlxogjs4326/crowdmap-repo/server /home/dlxogjs4326/crowdmap-repo/server/build /home/dlxogjs4326/crowdmap-repo/server/build /home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles/crowdmap_server.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /home/dlxogjs4326/crowdmap/server/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/dlxogjs4326/crowdmap/server /home/dlxogjs4326/crowdmap/server /home/dlxogjs4326/crowdmap/server/build /home/dlxogjs4326/crowdmap/server/build /home/dlxogjs4326/crowdmap/server/build/CMakeFiles/crowdmap_server.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : CMakeFiles/crowdmap_server.dir/depend
 

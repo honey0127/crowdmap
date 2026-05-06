@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/dlxogjs4326/crowdmap-repo/server
+CMAKE_SOURCE_DIR = /home/dlxogjs4326/crowdmap/server
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/dlxogjs4326/crowdmap-repo/server/build
+CMAKE_BINARY_DIR = /home/dlxogjs4326/crowdmap/server/build
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -87,9 +87,9 @@ rebuild_cache/fast: rebuild_cache
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles /home/dlxogjs4326/crowdmap-repo/server/build//CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/dlxogjs4326/crowdmap/server/build/CMakeFiles /home/dlxogjs4326/crowdmap/server/build//CMakeFiles/progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/dlxogjs4326/crowdmap-repo/server/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/dlxogjs4326/crowdmap/server/build/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
@@ -153,6 +153,30 @@ CongestionCalculator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/crowdmap_server.dir/build.make CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.s
 .PHONY : CongestionCalculator.cpp.s
 
+DeadSessionSweeper.o: DeadSessionSweeper.cpp.o
+.PHONY : DeadSessionSweeper.o
+
+# target to build an object file
+DeadSessionSweeper.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/crowdmap_server.dir/build.make CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o
+.PHONY : DeadSessionSweeper.cpp.o
+
+DeadSessionSweeper.i: DeadSessionSweeper.cpp.i
+.PHONY : DeadSessionSweeper.i
+
+# target to preprocess a source file
+DeadSessionSweeper.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/crowdmap_server.dir/build.make CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.i
+.PHONY : DeadSessionSweeper.cpp.i
+
+DeadSessionSweeper.s: DeadSessionSweeper.cpp.s
+.PHONY : DeadSessionSweeper.s
+
+# target to generate assembly for a file
+DeadSessionSweeper.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/crowdmap_server.dir/build.make CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.s
+.PHONY : DeadSessionSweeper.cpp.s
+
 FirebaseClient.o: FirebaseClient.cpp.o
 .PHONY : FirebaseClient.o
 
@@ -176,6 +200,30 @@ FirebaseClient.s: FirebaseClient.cpp.s
 FirebaseClient.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/crowdmap_server.dir/build.make CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.s
 .PHONY : FirebaseClient.cpp.s
+
+SlidingWindow.o: SlidingWindow.cpp.o
+.PHONY : SlidingWindow.o
+
+# target to build an object file
+SlidingWindow.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/crowdmap_server.dir/build.make CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o
+.PHONY : SlidingWindow.cpp.o
+
+SlidingWindow.i: SlidingWindow.cpp.i
+.PHONY : SlidingWindow.i
+
+# target to preprocess a source file
+SlidingWindow.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/crowdmap_server.dir/build.make CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.i
+.PHONY : SlidingWindow.cpp.i
+
+SlidingWindow.s: SlidingWindow.cpp.s
+.PHONY : SlidingWindow.s
+
+# target to generate assembly for a file
+SlidingWindow.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/crowdmap_server.dir/build.make CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.s
+.PHONY : SlidingWindow.cpp.s
 
 ThreadPool.o: ThreadPool.cpp.o
 .PHONY : ThreadPool.o
@@ -285,9 +333,15 @@ help:
 	@echo "... CongestionCalculator.o"
 	@echo "... CongestionCalculator.i"
 	@echo "... CongestionCalculator.s"
+	@echo "... DeadSessionSweeper.o"
+	@echo "... DeadSessionSweeper.i"
+	@echo "... DeadSessionSweeper.s"
 	@echo "... FirebaseClient.o"
 	@echo "... FirebaseClient.i"
 	@echo "... FirebaseClient.s"
+	@echo "... SlidingWindow.o"
+	@echo "... SlidingWindow.i"
+	@echo "... SlidingWindow.s"
 	@echo "... ThreadPool.o"
 	@echo "... ThreadPool.i"
 	@echo "... ThreadPool.s"
