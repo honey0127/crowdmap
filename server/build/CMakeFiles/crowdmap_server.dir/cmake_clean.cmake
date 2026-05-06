@@ -1,8 +1,12 @@
 file(REMOVE_RECURSE
   "CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o"
   "CMakeFiles/crowdmap_server.dir/CongestionCalculator.cpp.o.d"
+  "CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o"
+  "CMakeFiles/crowdmap_server.dir/DeadSessionSweeper.cpp.o.d"
   "CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o"
   "CMakeFiles/crowdmap_server.dir/FirebaseClient.cpp.o.d"
+  "CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o"
+  "CMakeFiles/crowdmap_server.dir/SlidingWindow.cpp.o.d"
   "CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o"
   "CMakeFiles/crowdmap_server.dir/ThreadPool.cpp.o.d"
   "CMakeFiles/crowdmap_server.dir/UserCountManager.cpp.o"
