@@ -37,7 +37,7 @@ CongestionCalculator congestionCalculator;
 std::unique_ptr<FirebaseClient> firebaseClient;
 CacheManager cacheManager(30);
 SlidingWindow slidingWindow(300);
-SeoulCityDataClient seoulClient("5159637a53646c7834304d4343766c");
+SeoulCityDataClient seoulClient("584f6d4369646c78363750796a7364");
 
 CongestionResult fromSeoulLevel(int level) {
     switch (level) {
@@ -133,6 +133,9 @@ void runServer() {
         std::cerr << "Socket creation failed\n";
         return;
     }
+
+    int opt = 1;
+    setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_addr.s_addr = INADDR_ANY;
