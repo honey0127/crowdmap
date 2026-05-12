@@ -37,7 +37,7 @@ CongestionCalculator congestionCalculator;
 std::unique_ptr<FirebaseClient> firebaseClient;
 CacheManager cacheManager(30);
 SlidingWindow slidingWindow(300);
-SeoulCityDataClient seoulClient("5159637a53646c7834304d4343766c");
+SeoulCityDataClient seoulClient("584f6d4369646c78363750796a7364");
 
 CongestionResult fromSeoulLevel(int level) {
     switch (level) {
