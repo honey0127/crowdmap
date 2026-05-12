@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew assembleDebug)",
+      "Bash(git -C \"C:/Users/dlxog/Desktop/crowdmap-repo\" checkout HEAD -- server/SeoulCityDataClient.h)",
+      "Bash(git -C \"C:/Users/dlxog/Desktop/crowdmap-repo\" checkout HEAD -- server/CongestionRouter.h server/ExternalCongestionClient.h)",
+      "Bash(git *)"
+    ]
+  }
+}
