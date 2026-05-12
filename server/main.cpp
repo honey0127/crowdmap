@@ -28,6 +28,7 @@
 #include "UserCountManager.h"
 #include "CongestionCalculator.h"
 #include "FirebaseClient.h"
+#include "SeoulCityDataClient.h"
 
 std::unique_ptr<ThreadPool> threadPool;
 ZoneMapper zoneMapper;
@@ -36,6 +37,17 @@ CongestionCalculator congestionCalculator;
 std::unique_ptr<FirebaseClient> firebaseClient;
 CacheManager cacheManager(30);
 SlidingWindow slidingWindow(300);
+SeoulCityDataClient seoulClient("5159637a53646c7834304d4343766c");
+
+CongestionResult fromSeoulLevel(int level) {
+    switch (level) {
+        case 1: return {CongestionLevel::RELAXED,  0.2,  0};
+        case 2: return {CongestionLevel::MODERATE, 0.5,  0};
+        case 3: return {CongestionLevel::CROWDED,  0.75, 0};
+        case 4: return {CongestionLevel::CROWDED,  0.95, 0};
+        default: return {CongestionLevel::RELAXED, 0.0,  0};
+    }
+}
 
 const int PORT = 5001;
 const int THREAD_POOL_SIZE = 4;
@@ -83,7 +95,16 @@ void handleClient(SOCKET clientSocket, int clientId) {
                 std::cout << "[Client " << clientId << "] Cache HIT!\n";
             } else {
                 std::cout << "[Client " << clientId << "] Cache MISS - calculating...\n";
-                result = congestionCalculator.calculateCongestion(zoneCount);
+                if (seoulClient.covers(latitude, longitude)) {
+                    auto ext = seoulClient.getCongestion(latitude, longitude);
+                    if (ext.valid) {
+                        result = fromSeoulLevel(ext.level);
+                    } else {
+                        result = congestionCalculator.calculateCongestion(zoneCount);
+                    }
+                } else {
+                    result = congestionCalculator.calculateCongestion(zoneCount);
+                }
                 cacheManager.set(zoneId, result);
             }
 
