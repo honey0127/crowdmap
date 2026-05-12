@@ -12,6 +12,8 @@ set(SOURCES
     UserCountManager.cpp
     CongestionCalculator.cpp
     FirebaseClient.cpp
+    SlidingWindow.cpp
+    DeadSessionSweeper.cpp
 )
 
 # 실행 파일 생성

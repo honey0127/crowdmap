@@ -18,9 +18,12 @@ public:
     
     // 특정 zone의 사용자 수 조회
     int getZoneCount(int zoneId);
-    
+
     // 모든 zone의 사용자 수 조회
     std::unordered_map<int, int> getAllZoneCounts();
+
+    // 사용자 완전 제거 (DeadSessionSweeper 호출용)
+    void removeUser(int userId);
 };
 
 #endif // USERCOUNTMANAGER_H

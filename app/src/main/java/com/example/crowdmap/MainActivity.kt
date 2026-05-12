@@ -37,7 +37,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private var userId = 1001
     private var isTracking = false
     private var currentLatLng: LatLng? = null
-    // 이전 원/마커 저장 변수 추가 (클래스 상단에)
     private var selectedCircle: com.google.android.gms.maps.model.Circle? = null
     private var selectedMarker: com.google.android.gms.maps.model.Marker? = null
 
@@ -49,19 +48,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 뷰 초기화
         tvStatus     = findViewById(R.id.tvStatus)
         tvLocation   = findViewById(R.id.tvLocation)
         tvCongestion = findViewById(R.id.tvCongestion)
         btnConnect   = findViewById(R.id.btnConnect)
         btnStart     = findViewById(R.id.btnStart)
 
-        // 지도 초기화
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
 
-        // 매니저 초기화
         locationManager = CrowdLocationManager(this)
         serverClient    = ServerClient()
 
@@ -71,21 +67,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         requestLocationPermission()
     }
 
-    // 지도 준비 완료 콜백
     override fun onMapReady(map: GoogleMap) {
         googleMap = map
 
-        // 대구로 초기 카메라 이동
         val daegu = LatLng(35.8714, 128.6014)
         googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(daegu, 14f))
 
-        // 내 위치 버튼 표시
         if (ContextCompat.checkSelfPermission(
                 this, Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             googleMap.isMyLocationEnabled = true
         }
+
         googleMap.setOnMapClickListener { latLng ->
             if (!serverClient.isConnected()) {
                 Toast.makeText(this, "먼저 서버에 연결하세요", Toast.LENGTH_SHORT).show()
@@ -94,24 +88,23 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             lifecycleScope.launch {
                 val congestion = serverClient.getCongestion(latLng.latitude, latLng.longitude)
                 if (congestion == null) {
-                    Toast.makeText(this@MainActivity, "혼잡도 데이터를 받지 못했습니다", Toast.LENGTH_SHORT).show()
+                    val msg = if (!serverClient.isConnected()) "서버 연결이 끊겼습니다. 다시 연결하세요"
+                              else "혼잡도 데이터를 받지 못했습니다"
+                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
+                    if (!serverClient.isConnected()) tvStatus.text = "❌ 연결 끊김"
                     return@launch
                 }
-                // 이전 원/마커 제거
                 selectedCircle?.remove()
                 selectedMarker?.remove()
 
-                // 새 원 그리기 (반투명 채우기 + 테두리)
                 selectedCircle = googleMap.addCircle(
                     CircleOptions()
                         .center(latLng)
                         .radius(200.0)
-                        .fillColor((congestion.color() and 0x00FFFFFF) or 0x4D000000)  // 30% 불투명
+                        .fillColor((congestion.color() and 0x00FFFFFF) or 0x4D000000)
                         .strokeColor(congestion.color())
                         .strokeWidth(5f)
                 )
-
-                // 새 마커 추가
                 selectedMarker = googleMap.addMarker(
                     MarkerOptions()
                         .position(latLng)
@@ -154,6 +147,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             // 서버로 위치 전송
             lifecycleScope.launch {
                 val result = serverClient.sendLocation(userId, lat, lng)
+                if (result == null && !serverClient.isConnected()) {
+                    tvStatus.text = "❌ 연결 끊김"
+                    stopTracking()
+                }
                 result?.let { updateCongestionUI(it, lat, lng) }
             }
         }
@@ -166,23 +163,19 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         locationManager.stopLocationUpdates()
     }
 
-    // 혼잡도 UI + 지도에 원 표시
     private fun updateCongestionUI(data: CongestionData, lat: Double, lng: Double) {
         tvCongestion.text = "혼잡도: ${data.levelKorean()} (${(data.ratio * 100).toInt()}%)"
         tvCongestion.setTextColor(data.color())
 
-        // 지도에 혼잡도 원 그리기
         val position = LatLng(lat, lng)
         googleMap.addCircle(
             CircleOptions()
                 .center(position)
-                .radius(200.0)           // 반경 200m
-                .fillColor((data.color() and 0x00FFFFFF) or 0x4D000000)  // 30% 불투명
+                .radius(200.0)
+                .fillColor((data.color() and 0x00FFFFFF) or 0x4D000000)
                 .strokeColor(data.color())
                 .strokeWidth(3f)
         )
-
-        // 마커 추가
         googleMap.addMarker(
             MarkerOptions()
                 .position(position)
