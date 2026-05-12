@@ -29,3 +29,13 @@ std::unordered_map<int, int> UserCountManager::getAllZoneCounts() {
     std::unique_lock<std::mutex> lock(mtx);
     return zoneCounts;
 }
+
+void UserCountManager::removeUser(int userId) {
+    std::unique_lock<std::mutex> lock(mtx);
+    if (userZones.count(userId)) {
+        int oldZone = userZones[userId];
+        if (zoneCounts.count(oldZone) && zoneCounts[oldZone] > 0)
+            zoneCounts[oldZone]--;
+        userZones.erase(userId);
+    }
+}

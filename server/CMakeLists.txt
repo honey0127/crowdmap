@@ -12,16 +12,12 @@ set(SOURCES
     UserCountManager.cpp
     CongestionCalculator.cpp
     FirebaseClient.cpp
-    DeadSessionSweeper.cpp
     SlidingWindow.cpp
+    DeadSessionSweeper.cpp
 )
 
 # 실행 파일 생성
 add_executable(crowdmap_server ${SOURCES})
-
-# 헤더 포함 경로 설정 (nlohmann/json 등을 위해)
-target_include_directories(crowdmap_server PRIVATE .)
-target_include_directories(crowdmap_server PRIVATE include)
 
 # libcurl 찾기
 find_package(CURL REQUIRED)

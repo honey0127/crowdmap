@@ -4,13 +4,7 @@
 #include <sstream>
 #include <memory>
 #include <cstring>
-#include <chrono>
-#include <map>
-#include <mutex>
-#include <vector>
 #include "CacheManager.h"
-#include "SeoulCityDataClient.h"
-#include "CongestionRouter.h"
 #include "SlidingWindow.h"
 #include "DeadSessionSweeper.h"
 
@@ -35,22 +29,18 @@
 #include "CongestionCalculator.h"
 #include "FirebaseClient.h"
 
-// 글로벌 객체들
 std::unique_ptr<ThreadPool> threadPool;
 ZoneMapper zoneMapper;
 UserCountManager userCountManager;
 CongestionCalculator congestionCalculator;
 std::unique_ptr<FirebaseClient> firebaseClient;
 CacheManager cacheManager(30);
-std::unique_ptr<CongestionRouter> congestionRouter;
-const std::string SEOUL_API_KEY = "sample";
-SlidingWindow slidingWindow(300);  // 5분 윈도우 (300초)
+SlidingWindow slidingWindow(300);
 
 const int PORT = 5001;
 const int THREAD_POOL_SIZE = 4;
 const std::string FIREBASE_PROJECT_ID = "crowdmap-50936";
 
-// 클라이언트 요청 처리 함수
 void handleClient(SOCKET clientSocket, int clientId) {
     char buffer[256] = {0};
 
@@ -79,24 +69,26 @@ void handleClient(SOCKET clientSocket, int clientId) {
             std::cout << "[Client " << clientId << "] Received: userId=" << userId
                       << ", lat=" << latitude << ", lng=" << longitude << "\n";
 
-            // 1. Zone 변환
             int zoneId = zoneMapper.coordinateToZoneId(latitude, longitude);
             std::cout << "[Client " << clientId << "] Zone ID: " << zoneId << "\n";
 
-            // 2. 사용자 수 업데이트 (userId가 0인 경우는 조회 전용이므로 업데이트 제외)
             if (userId != 0) {
                 slidingWindow.addEvent(userId, zoneId);
                 userCountManager.updateUserLocation(userId, zoneId);
             }
             int zoneCount = userCountManager.getZoneCount(zoneId);
 
-            // 3. 혼잡도 계산 (Router 활용: 캐시 -> 외부 API -> 내부 계산 fallback)
-            CongestionResult result = congestionRouter->resolve(latitude, longitude, zoneCount, cacheManager, zoneId);
+            CongestionResult result;
+            if (cacheManager.get(zoneId, result)) {
+                std::cout << "[Client " << clientId << "] Cache HIT!\n";
+            } else {
+                std::cout << "[Client " << clientId << "] Cache MISS - calculating...\n";
+                result = congestionCalculator.calculateCongestion(zoneCount);
+                cacheManager.set(zoneId, result);
+            }
 
-
-            // 4. 응답 전송
             std::string response = std::string(result.levelString()) + "|"
-                                 + std::to_string(result.ratio);
+                                 + std::to_string(result.ratio) + "\n";
             if (send(clientSocket, response.c_str(), response.length(), 0) == SOCKET_ERROR) {
                 std::cerr << "[Client " << clientId << "] Send failed\n";
                 break;
@@ -110,7 +102,6 @@ void handleClient(SOCKET clientSocket, int clientId) {
     closesocket(clientSocket);
 }
 
-// 메인 서버 루프
 void runServer() {
     SOCKET serverSocket;
     struct sockaddr_in serverAddr, clientAddr;
@@ -160,7 +151,7 @@ void runServer() {
 }
 
 int main() {
-    std::cout << "=== CrowdMap Server with Firebase ===\n\n";
+    std::cout << "=== CrowdMap Server ===\n\n";
 
     threadPool = std::make_unique<ThreadPool>(THREAD_POOL_SIZE);
     std::cout << "ThreadPool initialized with " << THREAD_POOL_SIZE << " workers\n\n";
@@ -171,15 +162,9 @@ int main() {
     auto zones = firebaseClient->getZones();
     std::cout << "Loaded " << zones.size() << " zones\n\n";
 
-    // CongestionRouter 초기화 및 클라이언트 등록
-    congestionRouter = std::make_unique<CongestionRouter>();
-    congestionRouter->addClient(std::make_shared<SeoulCityDataClient>(SEOUL_API_KEY));
-    std::cout << "CongestionRouter initialized with SeoulCityDataClient\n";
-
     DeadSessionSweeper deadSweeper(userCountManager, slidingWindow, 300);
     deadSweeper.start();
 
-    // 서버 시작
     runServer();
 
     return 0;

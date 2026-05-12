@@ -5,15 +5,16 @@ SlidingWindow::SlidingWindow(int windowSec, int maxHistory)
 
 std::vector<ExpiredEvent> SlidingWindow::addEvent(int userId, int zoneId) {
     std::unique_lock<std::mutex> lock(m_mtx);
+    auto now = std::chrono::steady_clock::now();
 
-    // 2. maxHistory 초과 시 가장 오래된 것 제거 (메모리 상한 보조)
+    auto& dq = m_history[userId];
+
+    dq.push_back({zoneId, now});
+
     while ((int)dq.size() > m_maxHistory) {
         dq.pop_front();
     }
 
-    // 3. windowSec 초과 항목을 deque 앞에서 순서대로 제거 (슬라이딩 윈도우 핵심)
-    //    deque는 앞=오래됨이므로 앞에서부터 체크
-    //    앞이 유효하면 뒤는 무조건 유효 → break
     std::vector<ExpiredEvent> expired;
     while (!dq.empty()) {
         auto age = std::chrono::duration_cast<std::chrono::seconds>(
@@ -24,7 +25,7 @@ std::vector<ExpiredEvent> SlidingWindow::addEvent(int userId, int zoneId) {
         dq.pop_front();
     }
 
-    return expired; // 대부분의 경우 빈 벡터
+    return expired;
 }
 
 std::vector<ExpiredEvent> SlidingWindow::sweepExpired() {
@@ -44,7 +45,6 @@ std::vector<ExpiredEvent> SlidingWindow::sweepExpired() {
         }
     }
 
-    // deque가 완전히 비어버린 사용자 엔트리 정리
     for (auto it = m_history.begin(); it != m_history.end(); ) {
         it = it->second.empty() ? m_history.erase(it) : std::next(it);
     }

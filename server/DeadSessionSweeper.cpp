@@ -30,40 +30,18 @@ void DeadSessionSweeper::sweepLoop() {
         std::this_thread::sleep_for(std::chrono::seconds(SWEEP_INTERVAL_SEC));
         if (!m_running) break;
 
-        // 1. 슬라이딩 윈도우에서 만료 이벤트 일괄 수집
         std::vector<ExpiredEvent> expired = m_slidingWindow.sweepExpired();
         if (expired.empty()) continue;
 
-        // 2. 만료된 userId 목록 수집 (중복 제거)
         std::unordered_set<int> expiredUsers;
         for (const auto& e : expired) {
             expiredUsers.insert(e.userId);
         }
 
-        // 3. 완전 이탈 사용자 처리
-        //    sweepExpired() 후 deque가 빈 사용자 = windowSec 동안 이벤트 없음
         int removedCount = 0;
         for (int userId : expiredUsers) {
             if (m_slidingWindow.getActiveEventCount(userId) == 0) {
-                // UserCountManager의 userZones에서 해당 userId의 zone 카운트를
-                // 직접 보정: 현재 zone의 카운트 -1 후 userZones에서 제거
-                //
-                // UserCountManager에 removeUser() 함수가 없으므로
-                // zoneId=-1 트릭 대신 아래처럼 새 함수를 추가하는 것을 권장:
-                //
-                //   void UserCountManager::removeUser(int userId) {
-                //       std::unique_lock<std::mutex> lock(mtx);
-                //       if (userZones.count(userId)) {
-                //           int oldZone = userZones[userId];
-                //           if (zoneCounts.count(oldZone) && zoneCounts[oldZone] > 0)
-                //               zoneCounts[oldZone]--;
-                //           userZones.erase(userId);
-                //       }
-                //   }
-                //
-                // 추가 후 아래 주석 해제:
-                // m_userMgr.removeUser(userId);
-
+                m_userMgr.removeUser(userId);
                 m_slidingWindow.removeUser(userId);
                 ++removedCount;
             }
