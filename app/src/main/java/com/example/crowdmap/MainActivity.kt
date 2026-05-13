@@ -37,8 +37,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private var userId = 1001
     private var isTracking = false
     private var currentLatLng: LatLng? = null
+
+    // ── 지도 탭 시 표시되는 원/마커 (1개만 유지) ──────────────────────────
     private var selectedCircle: com.google.android.gms.maps.model.Circle? = null
     private var selectedMarker: com.google.android.gms.maps.model.Marker? = null
+
+    // ── 위치 추적 중 표시되는 원/마커 (1개만 유지) ────────────────────────
+    private var trackingCircle: com.google.android.gms.maps.model.Circle? = null
+    private var trackingMarker: com.google.android.gms.maps.model.Marker? = null
 
     companion object {
         const val LOCATION_PERMISSION_REQUEST = 1001
@@ -89,11 +95,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 val congestion = serverClient.getCongestion(latLng.latitude, latLng.longitude)
                 if (congestion == null) {
                     val msg = if (!serverClient.isConnected()) "서버 연결이 끊겼습니다. 다시 연결하세요"
-                              else "혼잡도 데이터를 받지 못했습니다"
+                    else "혼잡도 데이터를 받지 못했습니다"
                     Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
                     if (!serverClient.isConnected()) tvStatus.text = "❌ 연결 끊김"
                     return@launch
                 }
+
+                // ── 이전 탭 원/마커 제거 후 새로 그리기 ──────────────────
                 selectedCircle?.remove()
                 selectedMarker?.remove()
 
@@ -139,12 +147,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             currentLatLng = LatLng(lat, lng)
             tvLocation.text = "위치: $lat, $lng"
 
-            // 지도 카메라 이동
             googleMap.animateCamera(
                 CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), 15f)
             )
 
-            // 서버로 위치 전송
             lifecycleScope.launch {
                 val result = serverClient.sendLocation(userId, lat, lng)
                 if (result == null && !serverClient.isConnected()) {
@@ -168,7 +174,12 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         tvCongestion.setTextColor(data.color())
 
         val position = LatLng(lat, lng)
-        googleMap.addCircle(
+
+        // ── 이전 추적 원/마커 제거 후 새로 그리기 (중복 방지) ────────────
+        trackingCircle?.remove()
+        trackingMarker?.remove()
+
+        trackingCircle = googleMap.addCircle(
             CircleOptions()
                 .center(position)
                 .radius(200.0)
@@ -176,7 +187,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 .strokeColor(data.color())
                 .strokeWidth(3f)
         )
-        googleMap.addMarker(
+        trackingMarker = googleMap.addMarker(
             MarkerOptions()
                 .position(position)
                 .title("혼잡도: ${data.levelKorean()}")
