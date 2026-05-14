@@ -7,7 +7,7 @@ set -euo pipefail  # 에러 발생 시 즉시 종료, 미정의 변수 참조 �
 # ── 경로 설정 ────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$REPO_ROOT/build"
+BUILD_DIR="$SCRIPT_DIR/build"
 BINARY="$BUILD_DIR/crowdmap_server"
 LOG_DIR="$REPO_ROOT/logs"
 ENV_FILE="$REPO_ROOT/.env"  # 비밀값 보관 파일 (.gitignore 에 반드시 추가)
