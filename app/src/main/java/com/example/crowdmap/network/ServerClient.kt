@@ -17,7 +17,7 @@ class ServerClient {
 
     companion object {
         val SERVER_IP: String = BuildConfig.SERVER_IP
-        const val SERVER_PORT = 5001
+        const val SERVER_PORT = 8765
         const val CONNECT_TIMEOUT_MS = 5000
         const val READ_TIMEOUT_MS = 5000
     }

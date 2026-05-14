@@ -288,7 +288,7 @@ int main() {
     // 1. 환경변수에서 비밀값 로드
     //    API 키, 프로젝트 ID 를 소스코드에 절대 하드코딩하지 않음
     const std::string seoulApiKey = requireEnv("SEOUL_API_KEY");
-    const int port = std::stoi(optionalEnv("SERVER_PORT", "5001"));
+    const int port = std::stoi(optionalEnv("SERVER_PORT", "8765"));
 
     // 2. ThreadPool 동적 크기
     //    I/O 바운드 작업(Seoul API HTTP) 이 많으므로 코어 수 × 2 가 효율적
