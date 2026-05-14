@@ -1,5 +1,6 @@
 package com.example.crowdmap.network
 
+import com.example.crowdmap.BuildConfig
 import com.example.crowdmap.model.CongestionData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -15,7 +16,7 @@ import java.net.Socket
 class ServerClient {
 
     companion object {
-        const val SERVER_IP = "34.50.3.81"
+        val SERVER_IP: String = BuildConfig.SERVER_IP
         const val SERVER_PORT = 5001
         const val CONNECT_TIMEOUT_MS = 5000
         const val READ_TIMEOUT_MS = 5000

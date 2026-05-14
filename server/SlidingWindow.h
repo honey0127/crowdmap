@@ -2,6 +2,7 @@
 #define SLIDINGWINDOW_H
 
 /**
+ * 시간 기반 자동 만료를 담당
  * @file SlidingWindow.h
  * @brief 슬라이딩 윈도우 - 오래된 위치 데이터 자동 제거
 
@@ -73,12 +74,14 @@ public:
     // 특정 사용자의 현재 유효 이벤트 수 (디버깅/통계용)
     int getActiveEventCount(int userId);
 
+    bool removeUserIfEmpty(int userId);
+
     // 추적 중인 전체 사용자 수
     int getTotalTrackedUsers();
 
 private:
-    int m_windowSec;
-    int m_maxHistory;
+    int m_windowSec; // 유효 시간(300 초 = 5분)
+    int m_maxHistory; // 사용자당 최대 이벤트 수 (60개) - 메모리 상환
     // userId → 위치 이벤트 deque (front=오래됨, back=최신)
     std::unordered_map<int, std::deque<TimestampedLocation>> m_history;
     std::mutex m_mtx;

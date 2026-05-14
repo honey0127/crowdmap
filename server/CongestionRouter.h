@@ -2,9 +2,9 @@
 #include "ExternalCongestionClient.h"
 #include "CongestionCalculator.h"
 #include "CacheManager.h"
+#include "Logger.h"
 #include <vector>
 #include <memory>
-#include <iostream>
 
 class CongestionRouter {
 public:
@@ -22,7 +22,7 @@ public:
         // 1. 캐시 먼저 확인
         CongestionResult cached;
         if (cache.get(zoneId, cached)) {
-            std::cout << "[Router] Cache hit zone=" << zoneId << "\n";
+            Log::info("[Router] Cache hit zone=" + std::to_string(zoneId));
             return cached;
         }
 
@@ -33,14 +33,14 @@ public:
             auto ext = client->getCongestion(lat, lng);
             if (!ext.valid) continue;
 
-            std::cout << "[Router] External hit source=" << ext.source << "\n";
+            Log::info("[Router] External hit source=" + ext.source);
             CongestionResult r = externalToResult(ext);
             cache.set(zoneId, r);
             return r;
         }
 
         // 3. Fallback: 내부 사용자 수 기반 계산
-        std::cout << "[Router] Fallback internal count=" << internalUserCount << "\n";
+        Log::info("[Router] Fallback internal count=" + std::to_string(internalUserCount));
         CongestionResult r = internalCalc.calculateCongestion(internalUserCount);
         cache.set(zoneId, r);
         return r;

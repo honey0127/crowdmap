@@ -1,6 +1,6 @@
 #include "FirebaseClient.h"
+#include "Logger.h"
 #include <curl/curl.h>
-#include <iostream>
 #include <sstream>
 #include <chrono>
 #include <iomanip>
@@ -21,7 +21,7 @@ json FirebaseClient::parseFirestoreResponse(const std::string& response) {
     try {
         return json::parse(response);
     } catch (const std::exception& e) {
-        std::cerr << "JSON parse error: " << e.what() << "\n";
+        Log::err("[Firebase] JSON parse error: " + std::string(e.what()));
         return json({});
     }
 }
@@ -32,7 +32,7 @@ std::vector<Place> FirebaseClient::getPlaces() {
     std::string response;
     
     if (!curl) {
-        std::cerr << "CURL init failed\n";
+        Log::err("[Firebase] CURL init failed");
         return places;
     }
     
@@ -45,7 +45,7 @@ std::vector<Place> FirebaseClient::getPlaces() {
     CURLcode res = curl_easy_perform(curl);
     
     if (res != CURLE_OK) {
-        std::cerr << "CURL request failed: " << curl_easy_strerror(res) << "\n";
+        Log::err("[Firebase] CURL request failed: " + std::string(curl_easy_strerror(res)));
         curl_easy_cleanup(curl);
         return places;
     }
@@ -83,13 +83,13 @@ std::vector<Place> FirebaseClient::getPlaces() {
                     }
                     
                     places.push_back(place);
-                    std::cout << "[Firebase] Loaded place: " << place.name << " (cap: " 
-                              << place.capacity << ")\n";
+                    Log::info("[Firebase] Loaded place: " + place.name
+                              + " (cap: " + std::to_string(place.capacity) + ")");
                 }
             }
         }
     } catch (const std::exception& e) {
-        std::cerr << "Error parsing places: " << e.what() << "\n";
+        Log::err("[Firebase] Error parsing places: " + std::string(e.what()));
     }
     
     curl_easy_cleanup(curl);
@@ -102,7 +102,7 @@ std::vector<Zone> FirebaseClient::getZones() {
     std::string response;
     
     if (!curl) {
-        std::cerr << "CURL init failed\n";
+        Log::err("[Firebase] CURL init failed");
         return zones;
     }
     
@@ -115,7 +115,7 @@ std::vector<Zone> FirebaseClient::getZones() {
     CURLcode res = curl_easy_perform(curl);
     
     if (res != CURLE_OK) {
-        std::cerr << "CURL request failed: " << curl_easy_strerror(res) << "\n";
+        Log::err("[Firebase] CURL request failed: " + std::string(curl_easy_strerror(res)));
         curl_easy_cleanup(curl);
         return zones;
     }
@@ -147,12 +147,12 @@ std::vector<Zone> FirebaseClient::getZones() {
                     }
                     
                     zones.push_back(zone);
-                    std::cout << "[Firebase] Loaded zone: " << zone.zoneId << "\n";
+                    Log::info("[Firebase] Loaded zone: " + std::to_string(zone.zoneId));
                 }
             }
         }
     } catch (const std::exception& e) {
-        std::cerr << "Error parsing zones: " << e.what() << "\n";
+        Log::err("[Firebase] Error parsing zones: " + std::string(e.what()));
     }
     
     curl_easy_cleanup(curl);
@@ -165,7 +165,7 @@ bool FirebaseClient::saveCongestionHistory(int zoneId, int userCount,
     std::string response;
     
     if (!curl) {
-        std::cerr << "CURL init failed\n";
+        Log::err("[Firebase] CURL init failed");
         return false;
     }
     
@@ -203,14 +203,14 @@ bool FirebaseClient::saveCongestionHistory(int zoneId, int userCount,
     CURLcode res = curl_easy_perform(curl);
     
     if (res != CURLE_OK) {
-        std::cerr << "[Firebase] Save failed: " << curl_easy_strerror(res) << "\n";
+        Log::err("[Firebase] Save failed: " + std::string(curl_easy_strerror(res)));
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
         return false;
     }
-    
-    std::cout << "[Firebase] Saved history - zone:" << zoneId 
-              << " count:" << userCount << " level:" << level << "\n";
+
+    Log::info("[Firebase] Saved history - zone:" + std::to_string(zoneId)
+              + " count:" + std::to_string(userCount) + " level:" + level);
     
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);

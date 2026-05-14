@@ -18,3 +18,5 @@ app/build/
 *.tab
 *.keystream
 *.len
+.env
+server/.env

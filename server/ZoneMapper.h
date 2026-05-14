@@ -11,9 +11,8 @@ private:
     static constexpr double BASE_LNG = 127.0;
 
 public:
-    // 위도, 경도를 zoneID로 변환
+    // 위도, 경도를 zoneID로 변환. 서비스 범위 밖이면 -1 반환
     int coordinateToZoneId(double latitude, double longitude);
-    
     // zoneID를 위도, 경도로 역변환 (선택사항)
     void zoneIdToCoordinate(int zoneId, double& latitude, double& longitude);
 };

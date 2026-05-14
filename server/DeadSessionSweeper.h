@@ -3,7 +3,6 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
-#include <iostream>
 #include <unordered_set>
 
 #include "UserCountManager.h"
@@ -28,8 +27,8 @@ private:
     UserCountManager& m_userMgr;
     SlidingWindow&    m_slidingWindow;
     int               m_timeoutSec;
-    std::atomic<bool> m_running;
-    std::thread       m_thread;
+    std::atomic<bool> m_running; // volatile 대신 atomic (메모리 가시성 보장)
+    std::thread       m_thread; // 완전 독립 백그라운드 스레드
 };
 
 #endif // DEADSESSIONSWEEPER_H

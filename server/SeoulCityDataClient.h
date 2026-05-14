@@ -1,11 +1,12 @@
 #pragma once
 #include "ExternalCongestionClient.h"
+#include "Logger.h"
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 #include <vector>
 #include <string>
 #include <utility>
-#include <iostream>
+#include <mutex>
 
 // 서울 실시간 도시데이터 API
 // 문서: https://data.seoul.go.kr/dataList/OA-21285/F/1/datasetView.do
@@ -13,7 +14,16 @@
 // 지역: 서울시 주요 121장소
 class SeoulCityDataClient : public ExternalCongestionClient {
 public:
-    SeoulCityDataClient(const std::string& apiKey) : apiKey(apiKey) {}
+    SeoulCityDataClient(const std::string& apiKey) : apiKey(apiKey) {
+        m_curl = curl_easy_init();
+        if (m_curl) {
+            curl_easy_setopt(m_curl, CURLOPT_TCP_KEEPALIVE, 1L);
+        }
+    }
+
+    ~SeoulCityDataClient() {
+        if (m_curl) curl_easy_cleanup(m_curl);
+    }
 
     bool covers(double lat, double lng) override {
         // 서울시 bbox (대략)
@@ -33,16 +43,18 @@ public:
             auto j = nlohmann::json::parse(response);
             auto& data = j["SeoulRtd.citydata_ppltn"][0];
             std::string lvl = data["AREA_CONGEST_LVL"].get<std::string>();
-            std::cout << "[Seoul API] " << areaName << " -> " << lvl << "\n";
+            Log::info("[Seoul API] " + areaName + " -> " + lvl);
             return {seoulLevelToInt(lvl), "seoul", true};
         } catch (const std::exception& e) {
-            std::cerr << "[Seoul API] Parse error: " << e.what() << "\n";
+            Log::err("[Seoul API] Parse error: " + std::string(e.what()));
             return {1, "seoul", false};
         }
     }
 
 private:
     std::string apiKey;
+    CURL*       m_curl = nullptr;
+    std::mutex  m_curlMutex;
 
     // 서울시 주요 121장소 좌표 매핑
     // 각 지역의 중심부 또는 대표 지점 좌표
@@ -219,15 +231,16 @@ private:
     }
 
     std::string httpGet(const std::string& url) {
-        CURL* curl = curl_easy_init();
+        std::lock_guard<std::mutex> lock(m_curlMutex);
         std::string response;
-        if (curl) {
-            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
-            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
-            curl_easy_perform(curl);
-            curl_easy_cleanup(curl);
+        if (m_curl) {
+            curl_easy_reset(m_curl);
+            curl_easy_setopt(m_curl, CURLOPT_URL, url.c_str());
+            curl_easy_setopt(m_curl, CURLOPT_WRITEFUNCTION, writeCallback);
+            curl_easy_setopt(m_curl, CURLOPT_WRITEDATA, &response);
+            curl_easy_setopt(m_curl, CURLOPT_TIMEOUT, 5L);
+            curl_easy_setopt(m_curl, CURLOPT_TCP_KEEPALIVE, 1L);
+            curl_easy_perform(m_curl);
         }
         return response;
     }
