@@ -33,7 +33,6 @@ typedef int SOCKET;
 #include "ZoneMapper.h"
 #include "UserCountManager.h"
 #include "CongestionCalculator.h"
-#include "FirebaseClient.h"
 #include "SeoulCityDataClient.h"
 
 // ═══════════════════════════════════════════════════════════════
@@ -62,7 +61,6 @@ static std::string optionalEnv(const char* key, const std::string& defaultVal) {
 //   스레드마다 생성하면 메모리/초기화 비용이 폭증하므로 전역 단일 인스턴스
 // ═══════════════════════════════════════════════════════════════
 static std::unique_ptr<ThreadPool>        threadPool;
-static std::unique_ptr<FirebaseClient>    firebaseClient;
 static std::unique_ptr<CongestionRouter>  router;
 
 static ZoneMapper       zoneMapper;
@@ -289,8 +287,7 @@ int main() {
 
     // 1. 환경변수에서 비밀값 로드
     //    API 키, 프로젝트 ID 를 소스코드에 절대 하드코딩하지 않음
-    const std::string seoulApiKey     = requireEnv("SEOUL_API_KEY");
-    const std::string firebaseProject = requireEnv("FIREBASE_PROJECT_ID");
+    const std::string seoulApiKey = requireEnv("SEOUL_API_KEY");
     const int port = std::stoi(optionalEnv("SERVER_PORT", "5001"));
 
     // 2. ThreadPool 동적 크기
@@ -302,27 +299,17 @@ int main() {
     Log::info("ThreadPool: " + std::to_string(workerCount) + " workers"
               + " (cores=" + std::to_string(std::thread::hardware_concurrency()) + ")");
 
-    // 3. Firebase 초기 데이터 로드 (시작 시 1회, 이후 런타임에는 접근 안 함)
-    firebaseClient = std::make_unique<FirebaseClient>(firebaseProject);
-    auto places = firebaseClient->getPlaces();
-    auto zones  = firebaseClient->getZones();
-    Log::info("loaded " + std::to_string(places.size()) + " places, "
-              + std::to_string(zones.size()) + " zones");
-
-    // 4. CongestionRouter 구성
+    // 3. CongestionRouter 구성
     //    우선순위: SeoulCityDataClient → (fallback) 내부 계산
-    //    추후 다른 외부 API 가 생기면 addClient() 한 줄만 추가하면 됨
     router = std::make_unique<CongestionRouter>();
     router->addClient(std::make_shared<SeoulCityDataClient>(seoulApiKey));
     Log::info("CongestionRouter ready (SeoulCityDataClient registered)");
 
-    // 5. 고스트 유저 정리 백그라운드 스레드 시작
-    //    NOTE: DeadSessionSweeper 의 TOCTOU race condition 은
-    //          SlidingWindow::removeUserIfEmpty() 추가로 별도 수정 필요
+    // 4. 고스트 유저 정리 백그라운드 스레드 시작
     DeadSessionSweeper deadSweeper(userCountManager, slidingWindow, 300);
     deadSweeper.start();
 
-    // 6. 서버 시작 (메인 스레드는 accept 루프만 담당)
+    // 5. 서버 시작 (메인 스레드는 accept 루프만 담당)
     runServer(port);
 
     return 0;

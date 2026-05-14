@@ -11,7 +11,6 @@ set(SOURCES
     ZoneMapper.cpp
     UserCountManager.cpp
     CongestionCalculator.cpp
-    FirebaseClient.cpp
     SlidingWindow.cpp
     DeadSessionSweeper.cpp
 )

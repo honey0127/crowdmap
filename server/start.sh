@@ -32,7 +32,7 @@ fi
 # ── 필수 환경변수 사전 확인 ─────────────────────────────────────
 # 서버 프로세스 안에서 확인하기 전에 스크립트 단에서 먼저 검사
 MISSING=0
-for VAR in SEOUL_API_KEY FIREBASE_PROJECT_ID; do
+for VAR in SEOUL_API_KEY; do
     if [ -z "${!VAR:-}" ]; then
         echo "[start.sh] ERROR: 필수 환경변수 없음 → $VAR"
         MISSING=1
@@ -42,7 +42,6 @@ if [ "$MISSING" -eq 1 ]; then
     echo ""
     echo "  .env 파일 예시:"
     echo "    SEOUL_API_KEY=여기에_서울_API_키"
-    echo "    FIREBASE_PROJECT_ID=crowdmap-50936"
     echo "    SERVER_PORT=5001"
     exit 1
 fi
