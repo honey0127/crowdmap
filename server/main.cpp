@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <unordered_map>
 #include <mutex>
+#include <curl/curl.h>
 #include "Logger.h"
 #include "CacheManager.h"
 #include "SlidingWindow.h"
@@ -280,6 +281,10 @@ static void runServer(int port) {
 // 엔트리포인트
 // ═══════════════════════════════════════════════════════════════
 int main() {
+    // libcurl 전역 초기화 — 멀티스레드 환경에서 첫 번째로 반드시 호출해야 함
+    // 미호출 시 OpenSSL 내부 초기화가 스레드 안전하지 않아 SIGKILL 유발
+    curl_global_init(CURL_GLOBAL_ALL);
+
     std::cout << "=== CrowdMap Server ===\n\n";
 
     // 1. 환경변수에서 비밀값 로드
