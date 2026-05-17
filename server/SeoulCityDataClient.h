@@ -47,22 +47,22 @@ public:
         try {
             auto j = nlohmann::json::parse(response);
 
-            // API 오류 응답 확인 (예: 인증키 오류, 요청 한도 초과)
-            if (j.contains("RESULT")) {
-                std::string code = j["RESULT"]["CODE"].get<std::string>();
-                std::string msg  = j["RESULT"]["MESSAGE"].get<std::string>();
-                Log::err("[Seoul API] Error " + code + ": " + msg);
-                return {1, "seoul", false};
-            }
+            if (!j.contains("SeoulRtd.citydata_ppltn")) return {1, "seoul", false};
 
-            auto& data = j["SeoulRtd.citydata_ppltn"][0];
+            auto& arr = j["SeoulRtd.citydata_ppltn"];
+            if (!arr.is_array() || arr.empty())       return {1, "seoul", false};
+
+            auto& data = arr[0];
+            if (!data.is_object())                    return {1, "seoul", false};
+            if (!data.contains("AREA_CONGEST_LVL"))   return {1, "seoul", false};
+            if (!data["AREA_CONGEST_LVL"].is_string()) return {1, "seoul", false};
+
             std::string lvl = data["AREA_CONGEST_LVL"].get<std::string>();
             Log::info("[Seoul API] " + areaName + " -> " + lvl);
             return {seoulLevelToInt(lvl), "seoul", true};
+
         } catch (const std::exception& e) {
-            Log::err("[Seoul API] Parse error for " + areaName
-                     + ": " + std::string(e.what())
-                     + " | raw=" + response.substr(0, 200));
+            Log::err("[Seoul API] Parse error for " + areaName + ": " + e.what());
             return {1, "seoul", false};
         }
     }

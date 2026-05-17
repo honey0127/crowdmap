@@ -104,7 +104,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     return@launch
                 }
 
-                // ── 이전 탭 원/마커 제거 후 새로 그리기 ──────────────────
+                // ── 클릭한 위치 정보 상단에 반영 ──────────────────────
+                val lat = String.format("%.6f", latLng.latitude)
+                val lng = String.format("%.6f", latLng.longitude)
+                tvLocation.text = "위치: $lat, $lng"
+                tvCongestion.text = "혼잡도: ${congestion.levelKorean()} (${(congestion.ratio * 100).toInt()}%)"
+                tvCongestion.setTextColor(congestion.color())
+
+                // ── 이전 탭 원/마커 제거 후 새로 그리기 ──────────────
                 selectedCircle?.remove()
                 selectedMarker?.remove()
 
