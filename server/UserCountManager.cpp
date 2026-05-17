@@ -14,6 +14,7 @@ void UserCountManager::updateUserLocation(int userId, int newZoneId) {
     
     // 새로운 zone에 사용자 추가
     zoneCounts[newZoneId]++;
+    // 현재 위치 갱신
     userZones[userId] = newZoneId;
 }
 

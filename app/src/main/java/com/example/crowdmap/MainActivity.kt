@@ -76,14 +76,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onMapReady(map: GoogleMap) {
         googleMap = map
 
-        val daegu = LatLng(35.8714, 128.6014)
-        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(daegu, 14f))
+        val fallback = LatLng(35.8890, 128.6100)  // 경북대학교
+        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(fallback, 15f))
 
         if (ContextCompat.checkSelfPermission(
                 this, Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             googleMap.isMyLocationEnabled = true
+            locationManager.getLastKnownLocation { lat, lng ->
+                googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), 15f))
+            }
         }
 
         googleMap.setOnMapClickListener { latLng ->

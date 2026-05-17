@@ -41,7 +41,6 @@ done
 if [ "$MISSING" -eq 1 ]; then
     echo ""
     echo "  .env 파일 예시:"
-    echo "    SEOUL_API_KEY=여기에_서울_API_키"
     echo "    SERVER_PORT=5001"
     exit 1
 fi

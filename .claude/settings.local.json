@@ -4,7 +4,11 @@
       "Bash(./gradlew assembleDebug)",
       "Bash(git -C \"C:/Users/dlxog/Desktop/crowdmap-repo\" checkout HEAD -- server/SeoulCityDataClient.h)",
       "Bash(git -C \"C:/Users/dlxog/Desktop/crowdmap-repo\" checkout HEAD -- server/CongestionRouter.h server/ExternalCongestionClient.h)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "PowerShell(tasklist *)",
+      "PowerShell(netstat *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ]
   }
 }

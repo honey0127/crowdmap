@@ -39,14 +39,30 @@ public:
                         + "/json/citydata_ppltn/1/1/" + urlEncode(areaName);
         std::string response = httpGet(url);
 
+        if (response.empty()) {
+            Log::err("[Seoul API] Empty response for " + areaName);
+            return {1, "seoul", false};
+        }
+
         try {
             auto j = nlohmann::json::parse(response);
+
+            // API 오류 응답 확인 (예: 인증키 오류, 요청 한도 초과)
+            if (j.contains("RESULT")) {
+                std::string code = j["RESULT"]["CODE"].get<std::string>();
+                std::string msg  = j["RESULT"]["MESSAGE"].get<std::string>();
+                Log::err("[Seoul API] Error " + code + ": " + msg);
+                return {1, "seoul", false};
+            }
+
             auto& data = j["SeoulRtd.citydata_ppltn"][0];
             std::string lvl = data["AREA_CONGEST_LVL"].get<std::string>();
             Log::info("[Seoul API] " + areaName + " -> " + lvl);
             return {seoulLevelToInt(lvl), "seoul", true};
         } catch (const std::exception& e) {
-            Log::err("[Seoul API] Parse error: " + std::string(e.what()));
+            Log::err("[Seoul API] Parse error for " + areaName
+                     + ": " + std::string(e.what())
+                     + " | raw=" + response.substr(0, 200));
             return {1, "seoul", false};
         }
     }
@@ -216,11 +232,11 @@ private:
     }
 
     std::string urlEncode(const std::string& s) {
-        CURL* curl = curl_easy_init();
-        char* encoded = curl_easy_escape(curl, s.c_str(), s.length());
+        // curl_easy_escape에 NULL 핸들을 전달해도 동작함 (CURL 문서 공식 지원)
+        char* encoded = curl_easy_escape(nullptr, s.c_str(), static_cast<int>(s.length()));
+        if (!encoded) return s;  // 인코딩 실패 시 원본 반환
         std::string result(encoded);
         curl_free(encoded);
-        curl_easy_cleanup(curl);
         return result;
     }
 

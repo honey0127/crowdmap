@@ -20,3 +20,6 @@ app/build/
 *.len
 .env
 server/.env
+server/build/
+logs/
+*.bak

@@ -64,6 +64,15 @@ class CrowdLocationManager(private val context: Context) {
         return last.distanceTo(newLocation) >= MIN_DISTANCE_METERS
     }
 
+    @SuppressLint("MissingPermission")
+    fun getLastKnownLocation(onResult: (Double, Double) -> Unit) {
+        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+            if (location != null) {
+                onResult(location.latitude, location.longitude)
+            }
+        }
+    }
+
     fun stopLocationUpdates() {
         locationCallback?.let {
             fusedLocationClient.removeLocationUpdates(it)

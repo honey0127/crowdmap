@@ -145,19 +145,16 @@ static void handleClient(SOCKET clientSocket, int clientId) {
                       + " lat=" + std::to_string(latitude)
                       + " lng=" + std::to_string(longitude));
 
-            // ── 좌표 유효성 검사 ─────────────────────────────
-            // ZoneMapper 는 범위 밖 좌표에서 음수 or 충돌 ID 를 반환할 수 있음
-            // 서울 bbox 밖이면 기본값 응답으로 조기 반환
-            if (latitude  < 37.40 || latitude  > 37.72 ||
-                longitude < 126.75 || longitude > 127.20) {
-                Log::warn(cid + "out-of-range coord → RELAXED");
+            // ── zone 변환 + 유효성 검사 ───────────────────────
+            // ZoneMapper 가 -1 을 반환하면 지원 범위 밖 (한반도 외 극외곽 좌표)
+            // Seoul API 적용 여부는 SeoulCityDataClient.covers() 에서 판단
+            int zoneId = zoneMapper.coordinateToZoneId(latitude, longitude);
+            if (zoneId == -1) {
+                Log::warn(cid + "out-of-ZoneMapper-range coord → RELAXED");
                 const std::string resp = "RELAXED|0.0\n";
                 send(clientSocket, resp.c_str(), static_cast<int>(resp.length()), 0);
                 continue;
             }
-
-            // ── zone 변환 ─────────────────────────────────────
-            int zoneId = zoneMapper.coordinateToZoneId(latitude, longitude);
 
             // ── 사용자 수 갱신 (userId=0 은 조회 전용) ────────
             if (userId != 0) {
