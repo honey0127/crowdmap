@@ -34,13 +34,8 @@ typedef int SOCKET;
 #include "UserCountManager.h"
 #include "CongestionCalculator.h"
 #include "SeoulCityDataClient.h"
+#include "DaeguTrafficClient.h"   // ← 추가
 
-// ═══════════════════════════════════════════════════════════════
-// 환경변수 헬퍼
-//   - 비밀값(API 키, 프로젝트 ID)을 소스코드에 하드코딩하지 않음
-//   - requireEnv: 없으면 즉시 종료 (필수값)
-//   - optionalEnv: 없으면 defaultVal 사용 (선택값)
-// ═══════════════════════════════════════════════════════════════
 static std::string requireEnv(const char* key) {
     const char* val = std::getenv(key);
     if (!val) {
@@ -56,30 +51,14 @@ static std::string optionalEnv(const char* key, const std::string& defaultVal) {
     return val ? std::string(val) : defaultVal;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 글로벌 싱글턴
-//   스레드마다 생성하면 메모리/초기화 비용이 폭증하므로 전역 단일 인스턴스
-// ═══════════════════════════════════════════════════════════════
 static std::unique_ptr<ThreadPool>        threadPool;
 static std::unique_ptr<CongestionRouter>  router;
 
 static ZoneMapper       zoneMapper;
 static UserCountManager userCountManager;
-static CacheManager     cacheManager(30, 1000); // TTL=30s, LRU maxSize=1000
-static SlidingWindow    slidingWindow(300);  // 윈도우 = 5분
+static CacheManager     cacheManager(30, 1000);
+static SlidingWindow    slidingWindow(300);
 
-// ═══════════════════════════════════════════════════════════════
-// Cache Stampede 방지 — zone 별 fetch 락
-//
-//   문제: 인기 zone 의 캐시가 만료되는 순간 수백 개 스레드가
-//         동시에 캐시 MISS → 외부 API 수백 회 중복 호출
-//
-//   해결: zone 별 mutex 로 fetch 를 1회로 직렬화
-//         (1) 외부에서 캐시 MISS 확인
-//         (2) zone mutex 획득
-//         (3) 락 안에서 캐시 재확인 (double-check)
-//         (4) 여전히 MISS 일 때만 API 호출
-// ═══════════════════════════════════════════════════════════════
 static std::mutex                                            zoneMutexMapLock;
 static std::unordered_map<int, std::shared_ptr<std::mutex>> zoneMutexMap;
 
@@ -90,47 +69,29 @@ static std::shared_ptr<std::mutex> getZoneMutex(int zoneId) {
     return ptr;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// TCP 한 줄 읽기 — 버퍼 분할 수신(fragmentation) 대응
-//
-//   문제: TCP 는 스트림 프로토콜 → "1001,37.5,127.0\n" 이
-//         "1001,37" / ".5,127.0\n" 처럼 쪼개져 올 수 있음
-//
-//   해결: \n 이 도달할 때까지 1바이트씩 누적
-//         (메시지가 짧으므로 syscall 비용이 문제되지 않음)
-//
-//   반환: 수신한 한 줄 (개행 제외), 연결 끊김이면 빈 문자열
-// ═══════════════════════════════════════════════════════════════
 static std::string recvLine(SOCKET sock) {
     std::string line;
     char c;
     while (true) {
         int n = recv(sock, &c, 1, 0);
-        if (n <= 0) return "";  // 연결 끊김 또는 에러
+        if (n <= 0) return "";
         if (c == '\n') break;
-        if (c != '\r') line += c;  // \r\n 도 처리
+        if (c != '\r') line += c;
     }
     return line;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 클라이언트 핸들러
-//   ThreadPool 워커 스레드에서 실행
-//   persistent connection: 소켓 하나로 반복 수신/송신
-// ═══════════════════════════════════════════════════════════════
 static void handleClient(SOCKET clientSocket, int clientId) {
     const std::string cid = "[Client " + std::to_string(clientId) + "] ";
 
     try {
         while (true) {
-            // ── 수신 ──────────────────────────────────────────
             std::string line = recvLine(clientSocket);
             if (line.empty()) {
                 Log::info(cid + "disconnected");
                 break;
             }
 
-            // ── 파싱: "userId,latitude,longitude" ─────────────
             std::istringstream iss(line);
             int    userId;
             double latitude, longitude;
@@ -145,9 +106,6 @@ static void handleClient(SOCKET clientSocket, int clientId) {
                       + " lat=" + std::to_string(latitude)
                       + " lng=" + std::to_string(longitude));
 
-            // ── zone 변환 + 유효성 검사 ───────────────────────
-            // ZoneMapper 가 -1 을 반환하면 지원 범위 밖 (한반도 외 극외곽 좌표)
-            // Seoul API 적용 여부는 SeoulCityDataClient.covers() 에서 판단
             int zoneId = zoneMapper.coordinateToZoneId(latitude, longitude);
             if (zoneId == -1) {
                 Log::warn(cid + "out-of-ZoneMapper-range coord → RELAXED");
@@ -156,38 +114,28 @@ static void handleClient(SOCKET clientSocket, int clientId) {
                 continue;
             }
 
-            // ── 사용자 수 갱신 (userId=0 은 조회 전용) ────────
             if (userId != 0) {
                 slidingWindow.addEvent(userId, zoneId);
                 userCountManager.updateUserLocation(userId, zoneId);
             }
             int zoneCount = userCountManager.getZoneCount(zoneId);
 
-            // ── 혼잡도 조회 ───────────────────────────────────
-            // 우선순위: 캐시 HIT → (zone 락) → 외부 API → 내부 계산 fallback
             CongestionResult result;
 
             if (cacheManager.get(zoneId, result)) {
-                // 캐시 HIT: API 호출 없이 즉시 응답
                 Log::info(cid + "cache HIT zone=" + std::to_string(zoneId));
-
             } else {
-                // 캐시 MISS: zone 별 mutex 로 fetch 를 1회로 직렬화
                 auto zoneMtx = getZoneMutex(zoneId);
                 std::unique_lock<std::mutex> fetchLock(*zoneMtx);
 
-                // double-check: 락 대기 중 다른 스레드가 채웠을 수 있음
                 if (!cacheManager.get(zoneId, result)) {
                     Log::info(cid + "cache MISS, fetching zone="
                               + std::to_string(zoneId));
-                    // CongestionRouter: SeoulAPI 시도 → 실패 시 내부 계산
-                    // 캐시 저장도 router 내부에서 수행
                     result = router->resolve(
                             latitude, longitude, zoneCount, cacheManager, zoneId);
                 }
             }
 
-            // ── 응답 전송 ─────────────────────────────────────
             std::string response = std::string(result.levelString()) + "|"
                                    + std::to_string(result.ratio) + "\n";
 
@@ -207,10 +155,6 @@ static void handleClient(SOCKET clientSocket, int clientId) {
     closesocket(clientSocket);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// TCP 서버 루프
-//   메인 스레드에서 accept 만 담당, 실제 처리는 ThreadPool 에 위임
-// ═══════════════════════════════════════════════════════════════
 static void runServer(int port) {
     SOCKET serverSocket;
     struct sockaddr_in serverAddr, clientAddr;
@@ -222,7 +166,6 @@ static void runServer(int port) {
         return;
     }
 
-    // 재시작 시 "Address already in use" 방지
     int opt = 1;
     setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR,
                reinterpret_cast<char*>(&opt), sizeof(opt));
@@ -239,7 +182,6 @@ static void runServer(int port) {
         return;
     }
 
-    // backlog 5→10: 동시 연결 폭증 시 accept 대기열 여유 확보
     if (listen(serverSocket, 10) == SOCKET_ERROR) {
         Log::err("listen failed");
         closesocket(serverSocket);
@@ -272,24 +214,17 @@ static void runServer(int port) {
     closesocket(serverSocket);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 엔트리포인트
-// ═══════════════════════════════════════════════════════════════
 int main() {
-    // libcurl 전역 초기화 — 멀티스레드 환경에서 첫 번째로 반드시 호출해야 함
-    // 미호출 시 OpenSSL 내부 초기화가 스레드 안전하지 않아 SIGKILL 유발
     curl_global_init(CURL_GLOBAL_ALL);
 
     std::cout << "=== CrowdMap Server ===\n\n";
 
     // 1. 환경변수에서 비밀값 로드
-    //    API 키, 프로젝트 ID 를 소스코드에 절대 하드코딩하지 않음
     const std::string seoulApiKey = requireEnv("SEOUL_API_KEY");
+    const std::string daeguApiKey = "e9e9d88d3877d92fe087f11a1588490687cc4a5fd87a82b02bdf9c9c6fca5638";  // ← 대구 API 키 입력
     const int port = std::stoi(optionalEnv("SERVER_PORT", "8765"));
 
     // 2. ThreadPool 동적 크기
-    //    I/O 바운드 작업(Seoul API HTTP) 이 많으므로 코어 수 × 2 가 효율적
-    //    hardware_concurrency() 가 0 을 반환하는 환경 대비 최소 4 보장
     const int workerCount = std::max(
             static_cast<int>(std::thread::hardware_concurrency()) * 2, 4);
     threadPool = std::make_unique<ThreadPool>(workerCount);
@@ -297,16 +232,17 @@ int main() {
               + " (cores=" + std::to_string(std::thread::hardware_concurrency()) + ")");
 
     // 3. CongestionRouter 구성
-    //    우선순위: SeoulCityDataClient → (fallback) 내부 계산
+    //    우선순위: SeoulCityDataClient → DaeguTrafficClient → 내부 계산
     router = std::make_unique<CongestionRouter>();
     router->addClient(std::make_shared<SeoulCityDataClient>(seoulApiKey));
-    Log::info("CongestionRouter ready (SeoulCityDataClient registered)");
+    router->addClient(std::make_shared<DaeguTrafficClient>(daeguApiKey));  // ← 추가
+    Log::info("CongestionRouter ready (Seoul + Daegu registered)");
 
     // 4. 고스트 유저 정리 백그라운드 스레드 시작
     DeadSessionSweeper deadSweeper(userCountManager, slidingWindow, 300);
     deadSweeper.start();
 
-    // 5. 서버 시작 (메인 스레드는 accept 루프만 담당)
+    // 5. 서버 시작
     runServer(port);
 
     return 0;
