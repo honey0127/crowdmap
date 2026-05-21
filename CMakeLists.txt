@@ -6,13 +6,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 소스 파일 목록
 set(SOURCES
-    main.cpp
-    ThreadPool.cpp
-    ZoneMapper.cpp
-    UserCountManager.cpp
-    CongestionCalculator.cpp
-    SlidingWindow.cpp
-    DeadSessionSweeper.cpp
+    server/main.cpp
+    server/ThreadPool.cpp
+    server/ZoneMapper.cpp
+    server/UserCountManager.cpp
+    server/CongestionCalculator.cpp
+    server/SlidingWindow.cpp
+    server/DeadSessionSweeper.cpp
 )
 
 # 실행 파일 생성
