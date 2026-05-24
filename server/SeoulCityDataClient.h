@@ -40,31 +40,55 @@ public:
         std::string response = httpGet(url);
 
         if (response.empty()) {
-            Log::err("[Seoul API] Empty response for " + areaName);
+            Log::err("[Seoul API] Empty response for " + areaName + " (Check API Key or Network)");
             return {1, "seoul", false};
         }
 
         try {
             auto j = nlohmann::json::parse(response);
 
-            if (!j.contains("SeoulRtd.citydata_ppltn")) return {1, "seoul", false};
+            // API 에러 응답 확인 (인증 실패 등)
+            if (j.contains("RESULT.MESSAGE")) {
+                std::string msg = j["RESULT.MESSAGE"].get<std::string>();
+                Log::err("[Seoul API] API Error Response: " + msg);
+                return {1, "seoul", false};
+            }
+
+            if (!j.contains("SeoulRtd.citydata_ppltn")) {
+                Log::err("[Seoul API] Invalid JSON Structure: 'SeoulRtd.citydata_ppltn' not found");
+                return {1, "seoul", false};
+            }
 
             auto& arr = j["SeoulRtd.citydata_ppltn"];
-            if (!arr.is_array() || arr.empty())       return {1, "seoul", false};
+            if (!arr.is_array() || arr.empty()) {
+                Log::warn("[Seoul API] Data array is empty for " + areaName);
+                return {1, "seoul", false};
+            }
 
             auto& data = arr[0];
-            if (!data.is_object())                    return {1, "seoul", false};
-            if (!data.contains("AREA_CONGEST_LVL"))   return {1, "seoul", false};
-            if (!data["AREA_CONGEST_LVL"].is_string()) return {1, "seoul", false};
+            if (!data.contains("AREA_CONGEST_LVL")) {
+                Log::err("[Seoul API] 'AREA_CONGEST_LVL' field missing for " + areaName);
+                return {1, "seoul", false};
+            }
 
             std::string lvl = data["AREA_CONGEST_LVL"].get<std::string>();
-            Log::info("[Seoul API] " + areaName + " -> " + lvl);
-            return {seoulLevelToInt(lvl), "seoul", true};
+            int levelInt = seoulLevelToInt(lvl);
+            Log::info("[Seoul API] Parsed level: " + std::to_string(levelInt) + " (" + lvl + ") for area: " + areaName);
 
+            return {levelInt, "seoul", true};
+
+        } catch (const nlohmann::json::exception& e) {
+            Log::err("[Seoul API] JSON Parse Exception for " + areaName + ": " + e.what());
+            Log::err("[Seoul API] Raw Response snippet: " + response.substr(0, 100));
+            return {1, "seoul", false};
         } catch (const std::exception& e) {
-            Log::err("[Seoul API] Parse error for " + areaName + ": " + e.what());
+            Log::err("[Seoul API] General Exception for " + areaName + ": " + e.what());
             return {1, "seoul", false};
         }
+    }
+
+    const std::vector<std::pair<std::string, std::pair<double,double>>>& getAreas() const {
+        return seoulAreas;
     }
 
 private:

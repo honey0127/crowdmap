@@ -11,6 +11,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.crowdmap.location.CrowdLocationManager
+import com.example.crowdmap.location.LocationRepository
 import com.example.crowdmap.model.CongestionData
 import com.example.crowdmap.network.ServerClient
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -26,6 +27,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var locationManager: CrowdLocationManager
     private lateinit var serverClient: ServerClient
+    private lateinit var locationRepository: LocationRepository
     private lateinit var googleMap: GoogleMap
 
     private lateinit var tvStatus: TextView
@@ -66,6 +68,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         locationManager = CrowdLocationManager(this)
         serverClient    = ServerClient()
+        locationRepository = LocationRepository(serverClient, lifecycleScope, userId)
 
         btnConnect.setOnClickListener { connectToServer() }
         btnStart.setOnClickListener   { toggleTracking() }
@@ -161,8 +164,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), 15f)
             )
 
+            // 1. 고성능 배치 전송을 위해 Repository로 위임 (Non-blocking)
+            val location = android.location.Location("").apply {
+                latitude = lat
+                longitude = lng
+            }
+            locationRepository.onLocationReceived(location)
+
+            // 2. 실시간 혼잡도 UI 업데이트를 위해 1회성 조회 수행 (선택적)
             lifecycleScope.launch {
-                val result = serverClient.sendLocation(userId, lat, lng)
+                val result = serverClient.getCongestion(lat, lng)
                 if (result == null && !serverClient.isConnected()) {
                     tvStatus.text = "❌ 연결 끊김"
                     stopTracking()

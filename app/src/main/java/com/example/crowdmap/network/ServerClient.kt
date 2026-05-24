@@ -1,6 +1,5 @@
 package com.example.crowdmap.network
 
-import com.example.crowdmap.BuildConfig
 import com.example.crowdmap.model.CongestionData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -16,8 +15,7 @@ import java.net.Socket
 class ServerClient {
 
     companion object {
-        //val SERVER_IP: String = BuildConfig.SERVER_IP
-        val SERVER_IP : String = "172.16.23.25"
+        val SERVER_IP : String = "192.168.0.45"
         const val SERVER_PORT = 5001
         const val CONNECT_TIMEOUT_MS = 5000
         const val READ_TIMEOUT_MS = 5000
@@ -44,46 +42,49 @@ class ServerClient {
         }
     }
 
+    /**
+     * [Update] 고성능 배치 전송: 위치 데이터 갱신 시에는 서버로부터 응답을 기대하지 않음 (Silent Update)
+     */
+    suspend fun sendBatchRaw(data: String): Boolean = withContext(Dispatchers.IO) {
+        socketLock.withLock {
+            try {
+                if (!isConnected()) return@withLock false
+                
+                writer?.write(data)
+                writer?.flush()
+                // 서버는 Update에 대해 응답을 보내지 않으므로 read() 생략
+                true
+            } catch (e: Exception) {
+                println("[ServerClient] 배치 전송 실패: ${e.message}")
+                closeConnection()
+                false
+            }
+        }
+    }
+
+    /**
+     * [Query] 실시간 혼잡도 조회: 맵 클릭 시 서버에 질의하고 응답을 수신함 (Request-Response)
+     */
     suspend fun getCongestion(
         latitude: Double,
         longitude: Double
     ): CongestionData? = withContext(Dispatchers.IO) {
         socketLock.withLock {
             try {
+                if (!isConnected()) return@withLock null
+
+                // userId=0은 조회 전용 프로토콜
                 val message = "0,$latitude,$longitude\n"
                 writer?.write(message)
                 writer?.flush()
 
+                // 서버는 userId=0인 경우에만 혼잡도 결과를 응답함
                 val response = reader?.readLine()
-                println("[ServerClient] 조회 응답: $response")
+                println("[ServerClient] 조회 응답 수신: $response")
 
                 response?.let { parseResponse(it) }
             } catch (e: Exception) {
                 println("[ServerClient] 조회 실패: ${e.message}")
-                closeConnection()
-                null
-            }
-        }
-    }
-
-    suspend fun sendLocation(
-        userId: Int,
-        latitude: Double,
-        longitude: Double
-    ): CongestionData? = withContext(Dispatchers.IO) {
-        socketLock.withLock {
-            try {
-                val message = "$userId,$latitude,$longitude\n"
-                writer?.write(message)
-                writer?.flush()
-                println("[ServerClient] 전송: $message")
-
-                val response = reader?.readLine()
-                println("[ServerClient] 응답: $response")
-
-                response?.let { parseResponse(it) }
-            } catch (e: Exception) {
-                println("[ServerClient] 전송 실패: ${e.message}")
                 closeConnection()
                 null
             }

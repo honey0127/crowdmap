@@ -46,7 +46,7 @@ if [ "$MISSING" -eq 1 ]; then
 fi
 
 # 기본값 설정
-export SERVER_PORT="${SERVER_PORT:-8765}"
+export SERVER_PORT="${SERVER_PORT:-5001}"
 
 # ── 바이너리 사전 확인 ───────────────────────────────────────────
 if [ ! -f "$BINARY" ]; then
