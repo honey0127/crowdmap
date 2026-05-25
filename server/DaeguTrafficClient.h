@@ -39,7 +39,9 @@ public:
         std::string linkId = findNearestLink(lat, lng);
 
         // 2. API 호출
-        std::string url = "https://apis.data.go.kr/6270000/service/rest1?serviceKey=e9e9d88d3877d92fe087f11a1588490687cc4a5fd87a82b02bdf9c9c6fca5638&pageNo=1&numOfRows=100&type=json";
+        std::string url = "https://apis.data.go.kr/6270000/service/rest1/linkspeed"
+                  "?serviceKey=" + apiKey +
+                  "&pageNo=1&numOfRows=1000&type=json";
         std::string response = httpGet(url);
 
         // 3. 해당 구간 속도 찾아서 레벨 반환

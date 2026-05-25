@@ -34,7 +34,7 @@ typedef int SOCKET;
 #include "UserCountManager.h"
 #include "CongestionCalculator.h"
 #include "SeoulCityDataClient.h"
-#include "DaeguTrafficClient.h"   // ← 추가
+#include "DaeguTrafficClient.h"   
 
 static std::string requireEnv(const char* key) {
     const char* val = std::getenv(key);
@@ -221,7 +221,7 @@ int main() {
 
     // 1. 환경변수에서 비밀값 로드
     const std::string seoulApiKey = requireEnv("SEOUL_API_KEY");
-    const std::string daeguApiKey = "e9e9d88d3877d92fe087f11a1588490687cc4a5fd87a82b02bdf9c9c6fca5638";  // ← 대구 API 키 입력
+    const std::string daeguApiKey = optionalEnv("DAEGU_API_KEY", "");
     const int port = std::stoi(optionalEnv("SERVER_PORT", "8765"));
 
     // 2. ThreadPool 동적 크기
