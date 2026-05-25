@@ -15,8 +15,10 @@ import java.net.Socket
 class ServerClient {
 
     companion object {
-        val SERVER_IP : String = "192.168.0.45"
-        const val SERVER_PORT = 5001
+        //val SERVER_IP: String = BuildConfig.SERVER_IP
+        val SERVER_IP : String = "172.20.127.227"
+
+        const val SERVER_PORT = 8765
         const val CONNECT_TIMEOUT_MS = 5000
         const val READ_TIMEOUT_MS = 5000
     }
