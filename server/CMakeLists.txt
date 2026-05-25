@@ -4,6 +4,12 @@ project(CrowdMapServer)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# 성능 최적화 컴파일 옵션
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-O3 -march=native -flto -ffast-math -pthread)
+    add_link_options(-flto -pthread)
+endif()
+
 # 소스 파일 목록
 set(SOURCES
     main.cpp
