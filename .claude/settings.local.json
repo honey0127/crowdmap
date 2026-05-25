@@ -8,7 +8,11 @@
       "PowerShell(tasklist *)",
       "PowerShell(netstat *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\" -Recurse -Directory)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(git show *)",
+      "Bash(cp server/DaeguTrafficClient.h.main server/DaeguTrafficClient.h)",
+      "Bash(cp server/SeoulCityDataClient.h.main server/SeoulCityDataClient.h)",
+      "Bash(rm server/DaeguTrafficClient.h.main server/SeoulCityDataClient.h.main)"
     ]
   }
 }
