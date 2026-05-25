@@ -19,10 +19,20 @@ ENV_FILE="$REPO_ROOT/.env"  # 비밀값 보관 파일 (.gitignore 에 반드시 
 #   SERVER_PORT=5001
 if [ -f "$ENV_FILE" ]; then
     # 주석(#) 과 빈 줄을 제외하고 export
-    set -a
-    # shellcheck disable=SC1090
-    source <(grep -E '^[A-Z_]+=.+' "$ENV_FILE")
-    set +a
+    while IFS= read -r line || [[ -n "$line" ]]; do
+    # 빈 줄·주석 건너뜀
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    # '=' 기준으로 키/값 분리 + 앞뒤 공백 제거
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key// /}"          # 공백 제거
+    value="${value// /}"      # 앞뒤 공백 제거
+    value="${value%$'\r'}"    # CRLF(\r) 제거
+    value="${value#\"}"       # 따옴표 제거 (있을 경우)
+    value="${value%\"}"
+    [[ -n "$key" ]] && export "$key=$value"
+    done < "$ENV_FILE"
+    echo "[start.sh] .env 로드 완료 (DAEGU_API_KEY 길이: ${#DAEGU_API_KEY}자)"
     echo "[start.sh] .env 로드 완료: $ENV_FILE"
 else
     echo "[start.sh] WARNING: .env 파일 없음 ($ENV_FILE)"
