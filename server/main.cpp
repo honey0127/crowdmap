@@ -16,6 +16,7 @@
 #include "ZoneMapper.h"
 #include "SpatialDensityEngine.h"
 #include "SeoulCityDataClient.h"
+#include "DaeguTrafficClient.h"
 #include "EpollServer.h"
 #include "PublicDataFeeder.h"
 
@@ -85,6 +86,7 @@ int main() {
     std::cout << "=== CrowdMap Spatial-Concurrency Server ===\n\n";
 
     const std::string seoulApiKey = requireEnv("SEOUL_API_KEY");
+    const std::string daeguApiKey = optionalEnv("DAEGU_API_KEY", "");
     const int port = std::stoi(optionalEnv("SERVER_PORT", "5001"));
 
     const int workerCount = std::max(
@@ -94,6 +96,8 @@ int main() {
 
     router = std::make_unique<CongestionRouter>();
     router->addClient(std::make_shared<SeoulCityDataClient>(seoulApiKey));
+    router->addClient(std::make_shared<DaeguTrafficClient>(daeguApiKey));
+    Log::info("CongestionRouter ready (Seoul + Daegu registered)");
 
     // 1. 공공 데이터 피더 (PublicDataFeeder) 객체 생성 및 백그라운드 스레드 시작
     // 5분마다 서울 API 데이터를 가져와 SpatialDensityEngine에 주입합니다.

@@ -6,7 +6,6 @@
 #include <vector>
 #include <string>
 #include <utility>
-#include <mutex>
 
 /*
  * @file DaeguTrafficClient.h
@@ -25,155 +24,146 @@
 
 class DaeguTrafficClient : public ExternalCongestionClient {
 public:
-    // ── [FIX 1] apiKey를 저장해두고 URL 생성 시 실제로 사용 ──────────
-    explicit DaeguTrafficClient(const std::string& key) : apiKey(key) {
-        m_curl = curl_easy_init();
-        if (m_curl) {
-            curl_easy_setopt(m_curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    DaeguTrafficClient(const std::string& apiKey) : apiKey(apiKey) {
+        if (apiKey.empty()) {
+            Log::warn("[DaeguTrafficClient] DAEGU_API_KEY 없음 — 이 클라이언트는 비활성화됩니다");
         }
     }
 
-    ~DaeguTrafficClient() {
-        if (m_curl) curl_easy_cleanup(m_curl);
-    }
-
+    // API 키가 없으면 covers()에서 false → router가 자동으로 건너뜀
     bool covers(double lat, double lng) override {
+        if (apiKey.empty()) return false;
         return lat >= 35.65 && lat <= 36.00 &&
                lng >= 128.40 && lng <= 128.80;
     }
 
     ExternalCongestionResult getCongestion(double lat, double lng) override {
+        if (apiKey.empty()) return {1, "daegu", false};
+
         std::string linkId = findNearestLink(lat, lng);
         if (linkId.empty()) {
-            Log::warn("[Daegu API] No nearest link found for lat="
-                      + std::to_string(lat) + " lng=" + std::to_string(lng));
+            Log::warn("[Daegu API] 가장 가까운 구간을 찾지 못했습니다");
             return {1, "daegu", false};
         }
 
-        // ── [FIX 2] apiKey 멤버 변수를 URL에 실제로 사용 ─────────────
-        //            numOfRows를 1000으로 늘려 전체 구간 포함
-        std::string url = "https://apis.data.go.kr/6270000/service/rest1"
-                          "?serviceKey=" + apiKey +
-                          "&pageNo=1&numOfRows=1000&type=json";
+        std::string url =
+            "https://apis.data.go.kr/6270000/service/rest1/linkspeed"
+            "?serviceKey=" + apiKey +
+            "&pageNo=1&numOfRows=1000&type=json";
 
         std::string response = httpGet(url);
 
+        // ── 응답이 비었는지 확인 ──────────────────────────────────────
         if (response.empty()) {
-            Log::err("[Daegu API] Empty response (linkId=" + linkId + ")");
+            Log::err("[Daegu API] 빈 응답 (네트워크 오류 또는 타임아웃)");
             return {1, "daegu", false};
         }
 
+        // ── JSON 시작 문자 확인 (HTML/XML 오류 페이지 걸러내기) ────────
+        // 공공데이터포털은 인증 실패 시 XML or HTML을 반환하기도 함
+        char firstChar = response[0];
+        if (firstChar != '{' && firstChar != '[') {
+            // 앞 200자만 로깅 (HTML 전체를 출력하지 않도록)
+            std::string preview = response.substr(0, std::min((int)response.size(), 200));
+            Log::err("[Daegu API] JSON이 아닌 응답 수신 (API 키 오류 또는 엔드포인트 문제)");
+            Log::err("[Daegu API] 응답 미리보기: " + preview);
+            return {1, "daegu", false};
+        }
+
+        // ── JSON 파싱 ─────────────────────────────────────────────────
         try {
             auto j = nlohmann::json::parse(response);
 
-            // ── [FIX 3] 응답 구조 존재 여부 단계별 확인 ─────────────
-            if (!j.contains("body")) {
-                Log::warn("[Daegu API] No 'body' in response");
+            // 공공데이터포털 표준 오류 응답 확인
+            if (j.contains("resultCode") || j.contains("errMsg")) {
+                std::string code = j.value("resultCode", "");
+                std::string msg  = j.value("errMsg", "unknown");
+                Log::err("[Daegu API] API 오류 응답: code=" + code + " msg=" + msg);
                 return {1, "daegu", false};
             }
-            if (!j["body"].contains("items") ||
-                !j["body"]["items"].contains("item")) {
-                Log::warn("[Daegu API] No items in response");
+
+            // 정상 데이터 탐색
+            if (!j.contains("body") || !j["body"].contains("items")) {
+                Log::err("[Daegu API] 응답에 body.items 없음");
                 return {1, "daegu", false};
             }
 
             auto& items = j["body"]["items"]["item"];
             if (!items.is_array()) {
-                Log::warn("[Daegu API] 'item' is not an array");
+                Log::err("[Daegu API] items.item 이 배열이 아님");
                 return {1, "daegu", false};
             }
 
             for (auto& item : items) {
-                // ── [FIX 4] STD_LINK_ID: 문자열·숫자 모두 안전하게 비교 ──
-                std::string itemLinkId;
-                if (item.contains("STD_LINK_ID")) {
-                    if (item["STD_LINK_ID"].is_string())
-                        itemLinkId = item["STD_LINK_ID"].get<std::string>();
-                    else
-                        itemLinkId = std::to_string(
-                                item["STD_LINK_ID"].get<long long>());
+                std::string itemLinkId = item.value("STD_LINK_ID", "");
+                if (itemLinkId == linkId) {
+                    int speed = item.value("LINK_SPEED", 0);
+                    int level = speedToLevel(speed);
+                    std::string sectionName = item.value("SECTION_NM", linkId);
+                    Log::info("[Daegu API] " + sectionName
+                              + " 속도: " + std::to_string(speed) + "km/h"
+                              + " 레벨: " + std::to_string(level));
+                    return {level, "daegu", true};
                 }
-
-                if (itemLinkId != linkId) continue;
-
-                // ── [FIX 5] LINK_SPEED: 문자열·숫자 모두 안전하게 파싱 ──
-                int speed = 0;
-                if (item.contains("LINK_SPEED")) {
-                    if (item["LINK_SPEED"].is_number())
-                        speed = item["LINK_SPEED"].get<int>();
-                    else if (item["LINK_SPEED"].is_string()) {
-                        try { speed = std::stoi(
-                                    item["LINK_SPEED"].get<std::string>()); }
-                        catch (...) { speed = 0; }
-                    }
-                }
-
-                int level = speedToLevel(speed);
-                std::string sectionName =
-                        (item.contains("SECTION_NM") &&
-                         item["SECTION_NM"].is_string())
-                        ? item["SECTION_NM"].get<std::string>()
-                        : linkId;
-
-                Log::info("[Daegu API] " + sectionName
-                          + " 속도=" + std::to_string(speed) + "km/h"
-                          + " 레벨=" + std::to_string(level));
-                return {level, "daegu", true};
             }
 
-            // linkId가 응답에 없는 경우 — 로그 남기고 폴백
-            Log::warn("[Daegu API] linkId=" + linkId + " not found in response ("
-                      + std::to_string(items.size()) + " items returned)");
+            Log::warn("[Daegu API] linkId=" + linkId + " 를 응답에서 찾지 못함");
             return {1, "daegu", false};
 
+        } catch (const nlohmann::json::parse_error& e) {
+            Log::err("[Daegu API] JSON 파싱 실패: " + std::string(e.what()));
+            // 파싱 실패 시 응답 앞부분 출력 (디버깅용)
+            Log::err("[Daegu API] 응답 미리보기: "
+                     + response.substr(0, std::min((int)response.size(), 200)));
+            return {1, "daegu", false};
         } catch (const std::exception& e) {
-            Log::err("[Daegu API] Parse error: " + std::string(e.what())
-                     + " | raw=" + response.substr(0, 200));
+            Log::err("[Daegu API] 예외: " + std::string(e.what()));
             return {1, "daegu", false};
         }
     }
 
 private:
-    std::string apiKey;   // ← 실제로 URL에 쓰임
-    CURL*       m_curl = nullptr;
-    std::mutex  m_curlMutex;
+    std::string apiKey;
 
     const std::vector<std::pair<std::string, std::pair<double, double>>> daeguLinks = {
-            // 달구벌대로
-            {"1500000100", {35.8561, 128.6270}},
-            {"1500000200", {35.8561, 128.6280}},
-            {"1500000503", {35.8714, 128.5940}},
-            {"1500000603", {35.8720, 128.5930}},
-            // 동성로/중앙로
-            {"1500001000", {35.8704, 128.5955}},
-            {"1500001100", {35.8688, 128.5966}},
-            // 경북대 주변
-            {"1500002000", {35.8863, 128.6095}},
-            {"1500002100", {35.8830, 128.6070}},
-            // 동대구역 주변
-            {"1500003000", {35.8796, 128.6281}},
-            {"1500003100", {35.8780, 128.6300}},
-            // 반월당
-            {"1500004000", {35.8660, 128.5950}},
-            {"1500004100", {35.8655, 128.5960}},
-            // 수성구
-            {"1500005000", {35.8575, 128.6305}},
-            {"1500005100", {35.8540, 128.6350}},
-            // 북구
-            {"1500006000", {35.9000, 128.5890}},
-            {"1500006100", {35.8960, 128.5870}},
-            // 달서구
-            {"1500007000", {35.8430, 128.5330}},
-            {"1500007100", {35.8500, 128.5500}},
+        // 달구벌대로
+        {"1500000100", {35.8561, 128.6270}},
+        {"1500000200", {35.8561, 128.6280}},
+        {"1500000503", {35.8714, 128.5940}},
+        {"1500000603", {35.8720, 128.5930}},
+        // 동성로/중앙로
+        {"1500001000", {35.8704, 128.5955}},
+        {"1500001100", {35.8688, 128.5966}},
+        // 경북대 주변
+        {"1500002000", {35.8863, 128.6095}},
+        {"1500002100", {35.8830, 128.6070}},
+        // 동대구역 주변
+        {"1500003000", {35.8796, 128.6281}},
+        {"1500003100", {35.8780, 128.6300}},
+        // 반월당
+        {"1500004000", {35.8660, 128.5950}},
+        {"1500004100", {35.8655, 128.5960}},
+        // 수성구
+        {"1500005000", {35.8575, 128.6305}},
+        {"1500005100", {35.8540, 128.6350}},
+        // 북구
+        {"1500006000", {35.9000, 128.5890}},
+        {"1500006100", {35.8960, 128.5870}},
+        // 달서구
+        {"1500007000", {35.8430, 128.5330}},
+        {"1500007100", {35.8500, 128.5500}},
     };
 
     std::string findNearestLink(double lat, double lng) {
         double minDist = 1e9;
         std::string nearest;
         for (auto& [id, coord] : daeguLinks) {
-            double d = (lat - coord.first)  * (lat - coord.first)
-                       + (lng - coord.second) * (lng - coord.second);
-            if (d < minDist) { minDist = d; nearest = id; }
+            double d = (lat - coord.first) * (lat - coord.first)
+                     + (lng - coord.second) * (lng - coord.second);
+            if (d < minDist) {
+                minDist = d;
+                nearest = id;
+            }
         }
         return nearest;
     }
@@ -190,22 +180,17 @@ private:
         return size * nmemb;
     }
 
-    // ── [FIX 6] SeoulCityDataClient처럼 CURL 핸들 재사용 ─────────────
     std::string httpGet(const std::string& url) {
-        std::lock_guard<std::mutex> lock(m_curlMutex);
+        CURL* curl = curl_easy_init();
         std::string response;
-        if (m_curl) {
-            curl_easy_reset(m_curl);
-            curl_easy_setopt(m_curl, CURLOPT_URL, url.c_str());
-            curl_easy_setopt(m_curl, CURLOPT_WRITEFUNCTION, writeCallback);
-            curl_easy_setopt(m_curl, CURLOPT_WRITEDATA, &response);
-            curl_easy_setopt(m_curl, CURLOPT_TIMEOUT, 5L);
-            curl_easy_setopt(m_curl, CURLOPT_TCP_KEEPALIVE, 1L);
-            CURLcode res = curl_easy_perform(m_curl);
-            if (res != CURLE_OK) {
-                Log::err("[Daegu API] curl error: "
-                         + std::string(curl_easy_strerror(res)));
-            }
+        if (curl) {
+            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // 리다이렉트 허용
+            curl_easy_perform(curl);
+            curl_easy_cleanup(curl);
         }
         return response;
     }
