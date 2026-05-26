@@ -1,40 +1,24 @@
 #include <iostream>
-#include <thread>
 #include <string>
-#include <sstream>
 #include <memory>
-#include <cstring>
 #include <cstdlib>
-#include <unordered_map>
-#include <mutex>
+#include <thread>
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <algorithm>
 #include <curl/curl.h>
+
 #include "Logger.h"
-#include "CacheManager.h"
-#include "SlidingWindow.h"
-#include "DeadSessionSweeper.h"
-#include "CongestionRouter.h"
-
-#ifdef _WIN32
-#include <winsock2.h>
-    #pragma comment(lib, "ws2_32.lib")
-    typedef int socklen_t;
-#else
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#define INVALID_SOCKET -1
-#define SOCKET_ERROR   -1
-#define closesocket    close
-typedef int SOCKET;
-#endif
-
 #include "ThreadPool.h"
 #include "ZoneMapper.h"
-#include "UserCountManager.h"
-#include "CongestionCalculator.h"
+#include "CacheManager.h"
+#include "CongestionRouter.h"
+#include "SpatialDensityEngine.h"
+#include "EpollServer.h"
+#include "PublicDataFeeder.h"
 #include "SeoulCityDataClient.h"
-#include "DaeguTrafficClient.h"   
+#include "DaeguTrafficClient.h"
 
 static std::string requireEnv(const char* key) {
     const char* val = std::getenv(key);
@@ -51,199 +35,89 @@ static std::string optionalEnv(const char* key, const std::string& defaultVal) {
     return val ? std::string(val) : defaultVal;
 }
 
-static std::unique_ptr<ThreadPool>        threadPool;
-static std::unique_ptr<CongestionRouter>  router;
+// ── 시그널 핸들러용 전역 핸들 ─────────────────────────────
+static EpollServer*           g_server = nullptr;
+static std::atomic<bool>      g_cleanupRunning{false};
 
-static ZoneMapper       zoneMapper;
-static UserCountManager userCountManager;
-static CacheManager     cacheManager(30, 1000);
-static SlidingWindow    slidingWindow(300);
-
-static std::mutex                                            zoneMutexMapLock;
-static std::unordered_map<int, std::shared_ptr<std::mutex>> zoneMutexMap;
-
-static std::shared_ptr<std::mutex> getZoneMutex(int zoneId) {
-    std::lock_guard<std::mutex> lock(zoneMutexMapLock);
-    auto& ptr = zoneMutexMap[zoneId];
-    if (!ptr) ptr = std::make_shared<std::mutex>();
-    return ptr;
-}
-
-static std::string recvLine(SOCKET sock) {
-    std::string line;
-    char c;
-    while (true) {
-        int n = recv(sock, &c, 1, 0);
-        if (n <= 0) return "";
-        if (c == '\n') break;
-        if (c != '\r') line += c;
-    }
-    return line;
-}
-
-static void handleClient(SOCKET clientSocket, int clientId) {
-    const std::string cid = "[Client " + std::to_string(clientId) + "] ";
-
-    try {
-        while (true) {
-            std::string line = recvLine(clientSocket);
-            if (line.empty()) {
-                Log::info(cid + "disconnected");
-                break;
-            }
-
-            std::istringstream iss(line);
-            int    userId;
-            double latitude, longitude;
-            char   comma;
-
-            if (!(iss >> userId >> comma >> latitude >> comma >> longitude)) {
-                Log::warn(cid + "invalid format → \"" + line + "\"");
-                continue;
-            }
-
-            Log::info(cid + "userId=" + std::to_string(userId)
-                      + " lat=" + std::to_string(latitude)
-                      + " lng=" + std::to_string(longitude));
-
-            int zoneId = zoneMapper.coordinateToZoneId(latitude, longitude);
-            if (zoneId == -1) {
-                Log::warn(cid + "out-of-ZoneMapper-range coord → RELAXED");
-                const std::string resp = "RELAXED|0.0\n";
-                send(clientSocket, resp.c_str(), static_cast<int>(resp.length()), 0);
-                continue;
-            }
-
-            if (userId != 0) {
-                slidingWindow.addEvent(userId, zoneId);
-                userCountManager.updateUserLocation(userId, zoneId);
-            }
-            int zoneCount = userCountManager.getZoneCount(zoneId);
-
-            CongestionResult result;
-
-            if (cacheManager.get(zoneId, result)) {
-                Log::info(cid + "cache HIT zone=" + std::to_string(zoneId));
-            } else {
-                auto zoneMtx = getZoneMutex(zoneId);
-                std::unique_lock<std::mutex> fetchLock(*zoneMtx);
-
-                if (!cacheManager.get(zoneId, result)) {
-                    Log::info(cid + "cache MISS, fetching zone="
-                              + std::to_string(zoneId));
-                    result = router->resolve(
-                            latitude, longitude, zoneCount, cacheManager, zoneId);
-                }
-            }
-
-            std::string response = std::string(result.levelString()) + "|"
-                                   + std::to_string(result.ratio) + "\n";
-
-            if (send(clientSocket,
-                     response.c_str(),
-                     static_cast<int>(response.length()), 0) == SOCKET_ERROR) {
-                Log::err(cid + "send failed");
-                break;
-            }
-            Log::info(cid + "→ " + response);
-        }
-
-    } catch (const std::exception& e) {
-        Log::err(cid + "exception: " + e.what());
-    }
-
-    closesocket(clientSocket);
-}
-
-static void runServer(int port) {
-    SOCKET serverSocket;
-    struct sockaddr_in serverAddr, clientAddr;
-    socklen_t clientAddrLen = sizeof(clientAddr);
-
-    serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (serverSocket == INVALID_SOCKET) {
-        Log::err("socket creation failed");
-        return;
-    }
-
-    int opt = 1;
-    setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR,
-               reinterpret_cast<char*>(&opt), sizeof(opt));
-
-    serverAddr.sin_family      = AF_INET;
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
-    serverAddr.sin_port        = htons(static_cast<uint16_t>(port));
-
-    if (bind(serverSocket,
-             reinterpret_cast<struct sockaddr*>(&serverAddr),
-             sizeof(serverAddr)) == SOCKET_ERROR) {
-        Log::err("bind failed on port " + std::to_string(port));
-        closesocket(serverSocket);
-        return;
-    }
-
-    if (listen(serverSocket, 10) == SOCKET_ERROR) {
-        Log::err("listen failed");
-        closesocket(serverSocket);
-        return;
-    }
-
-    Log::info("server listening on port " + std::to_string(port));
-
-    int clientIdCounter = 1;
-    while (true) {
-        SOCKET clientSocket = accept(
-                serverSocket,
-                reinterpret_cast<struct sockaddr*>(&clientAddr),
-                &clientAddrLen);
-
-        if (clientSocket == INVALID_SOCKET) {
-            Log::err("accept failed");
-            continue;
-        }
-
-        int cid = clientIdCounter++;
-        Log::info("client " + std::to_string(cid)
-                  + " connected from " + inet_ntoa(clientAddr.sin_addr));
-
-        threadPool->enqueue([clientSocket, cid]() {
-            handleClient(clientSocket, cid);
-        });
-    }
-
-    closesocket(serverSocket);
+static void handleSignal(int) {
+    g_cleanupRunning = false;
+    if (g_server) g_server->stop();
 }
 
 int main() {
     curl_global_init(CURL_GLOBAL_ALL);
+    std::signal(SIGPIPE, SIG_IGN);   // send() 중 상대 종료로 인한 프로세스 종료 방지
 
-    std::cout << "=== CrowdMap Server ===\n\n";
+    std::cout << "=== CrowdMap Server (epoll reactor + SpatialDensityEngine) ===\n\n";
 
-    // 1. 환경변수에서 비밀값 로드
+    // 1. 환경변수 로드
     const std::string seoulApiKey = requireEnv("SEOUL_API_KEY");
     const std::string daeguApiKey = optionalEnv("DAEGU_API_KEY", "");
-    const int port = std::stoi(optionalEnv("SERVER_PORT", "8765"));
+    const int         port        = std::stoi(optionalEnv("SERVER_PORT", "8765"));
 
-    // 2. ThreadPool 동적 크기
-    const int workerCount = std::max(
-            static_cast<int>(std::thread::hardware_concurrency()) * 2, 4);
-    threadPool = std::make_unique<ThreadPool>(workerCount);
+    // ── 수명(destruction) 순서가 중요하다 ──────────────────────────────
+    // 선언 순서:  zoneMapper → cacheManager → densityEngine → router
+    //            → feeder → threadPool → (cleanupThread) → server
+    // 소멸은 역순이므로 server 가 가장 먼저, threadPool 이 그 다음에 소멸한다.
+    // ThreadPool 소멸자가 워커를 join 할 때, 오프로드된 조회 작업이
+    // 여전히 densityEngine/router/cache 를 참조하더라도 이들은 아직 살아 있다.
+
+    // 2. 비즈니스 컴포넌트
+    ZoneMapper           zoneMapper;
+    CacheManager         cacheManager(30, 1000);
+    SpatialDensityEngine densityEngine;
+
+    CongestionRouter router;
+    router.addClient(std::make_shared<SeoulCityDataClient>(seoulApiKey));
+    router.addClient(std::make_shared<DaeguTrafficClient>(daeguApiKey));
+    Log::info("CongestionRouter ready (Seoul + Daegu registered)");
+
+    // 3. 공공데이터 피더(아직 시작하지 않음) — 선언만 (수명 보장용)
+    PublicDataFeeder feeder(densityEngine, seoulApiKey);
+
+    // 4. ThreadPool: epoll 리액터가 넘긴 블로킹 조회 작업(외부 API 호출 등)을 처리
+    const int workerCount =
+            std::max(static_cast<int>(std::thread::hardware_concurrency()) * 2, 4);
+    ThreadPool threadPool(workerCount);
     Log::info("ThreadPool: " + std::to_string(workerCount) + " workers"
               + " (cores=" + std::to_string(std::thread::hardware_concurrency()) + ")");
 
-    // 3. CongestionRouter 구성
-    //    우선순위: SeoulCityDataClient → DaeguTrafficClient → 내부 계산
-    router = std::make_unique<CongestionRouter>();
-    router->addClient(std::make_shared<SeoulCityDataClient>(seoulApiKey));
-    router->addClient(std::make_shared<DaeguTrafficClient>(daeguApiKey));  // ← 추가
-    Log::info("CongestionRouter ready (Seoul + Daegu registered)");
+    // 5. 밀도 엔진 청소 스레드 핸들(아직 시작하지 않음)
+    std::thread cleanupThread;
 
-    // 4. 고스트 유저 정리 백그라운드 스레드 시작
-    DeadSessionSweeper deadSweeper(userCountManager, slidingWindow, 300);
-    deadSweeper.start();
+    // 6. epoll 서버 생성 (bind 실패 등으로 throw 가능 — 이 시점엔 아직 스레드 미시작)
+    EpollServer server(static_cast<uint16_t>(port),
+                       densityEngine, zoneMapper, router, cacheManager, threadPool);
+    g_server = &server;
 
-    // 5. 서버 시작
-    runServer(port);
+    // ── 서버 생성 성공 후에 백그라운드 스레드들을 시작 ──
+    feeder.start();   // 5분 주기 서울시 API → 가상 유저 주입
 
+    // 밀도 엔진 청소: GridZone 5분 만료 데이터/빈 그리드 제거
+    // (옛 DeadSessionSweeper 의 Ghost 유저 정리 역할을 이 경로가 대체)
+    g_cleanupRunning = true;
+    cleanupThread = std::thread([&densityEngine]() {
+        while (g_cleanupRunning) {
+            for (int i = 0; i < 30 && g_cleanupRunning; ++i)
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (!g_cleanupRunning) break;
+            densityEngine.globalCleanup();
+            Log::info("[DensityCleaner] globalCleanup 완료");
+        }
+    });
+
+    std::signal(SIGINT,  handleSignal);
+    std::signal(SIGTERM, handleSignal);
+
+    server.run();   // stop() 전까지 블로킹
+
+    // 7. 정상 종료
+    Log::info("shutting down...");
+    g_cleanupRunning = false;
+    if (cleanupThread.joinable()) cleanupThread.join();
+    feeder.stop();
+
+    g_server = nullptr;
+    curl_global_cleanup();
     return 0;
 }

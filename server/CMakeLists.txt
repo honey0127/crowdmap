@@ -11,14 +11,17 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 # 소스 파일 목록
+#   [추가] EpollServer.cpp, PublicDataFeeder.cpp
+#   [제외] UserCountManager.cpp / SlidingWindow.cpp / DeadSessionSweeper.cpp
+#          → epoll + SpatialDensityEngine 아키텍처로 대체되어 더 이상 빌드에 포함하지 않음.
+#            (Ghost 유저 정리는 GridZone 5분 만료 + SpatialDensityEngine::globalCleanup 가 담당)
 set(SOURCES
-    main.cpp
-    ThreadPool.cpp
-    ZoneMapper.cpp
-    UserCountManager.cpp
-    CongestionCalculator.cpp
-    SlidingWindow.cpp
-    DeadSessionSweeper.cpp
+        main.cpp
+        ThreadPool.cpp
+        ZoneMapper.cpp
+        CongestionCalculator.cpp
+        EpollServer.cpp
+        PublicDataFeeder.cpp
 )
 
 # 실행 파일 생성
@@ -27,24 +30,25 @@ add_executable(crowdmap_server ${SOURCES})
 # libcurl 찾기
 find_package(CURL REQUIRED)
 
-# nlohmann/json (SeoulCityDataClient JSON 파싱용)
-# 시스템에 설치된 경우(sudo apt install nlohmann-json3-dev) 그것을 사용,
-# 없으면 FetchContent로 자동 다운로드
+# nlohmann/json (Seoul/Daegu 클라이언트 JSON 파싱용)
 find_package(nlohmann_json QUIET)
 if(NOT nlohmann_json_FOUND)
     include(FetchContent)
     FetchContent_Declare(
-        nlohmann_json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG        v3.11.3
-        GIT_SHALLOW    TRUE
+            nlohmann_json
+            GIT_REPOSITORY https://github.com/nlohmann/json.git
+            GIT_TAG        v3.11.3
+            GIT_SHALLOW    TRUE
     )
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
-# Windows에서 Winsock 라이브러리 링크
+# epoll 기반 서버는 Linux 전용이다.
+#   (EpollServer 가 <sys/epoll.h> 를 사용 → Windows 빌드는 지원하지 않음)
 if(WIN32)
-    target_link_libraries(crowdmap_server ws2_32 CURL::libcurl nlohmann_json::nlohmann_json)
+    message(FATAL_ERROR
+            "이 서버는 epoll 기반이라 Linux 에서만 빌드/실행됩니다. (Windows 미지원)")
 else()
-    target_link_libraries(crowdmap_server pthread CURL::libcurl nlohmann_json::nlohmann_json)
+    target_link_libraries(crowdmap_server
+            pthread CURL::libcurl nlohmann_json::nlohmann_json)
 endif()
