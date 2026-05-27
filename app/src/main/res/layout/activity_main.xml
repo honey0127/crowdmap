@@ -24,6 +24,36 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"/>
 
+        <!-- ── POI 검색창 추가 ───────────────────────────── -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="6dp">
+
+            <EditText
+                android:id="@+id/etSearch"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="44dp"
+                android:hint="장소 검색 (예: 동성로, 경북대)"
+                android:textSize="13sp"
+                android:paddingHorizontal="10dp"
+                android:background="@android:drawable/edit_text"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:singleLine="true"
+                android:layout_marginEnd="6dp"/>
+
+            <Button
+                android:id="@+id/btnSearch"
+                android:text="검색"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"/>
+
+        </LinearLayout>
+        <!-- ─────────────────────────────────────────────── -->
+
         <TextView
             android:id="@+id/tvStatus"
             android:text="서버 미연결"

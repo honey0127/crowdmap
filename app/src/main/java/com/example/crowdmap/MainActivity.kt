@@ -2,8 +2,12 @@ package com.example.crowdmap
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.location.Geocoder
 import android.os.Bundle
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -21,7 +25,10 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.CircleOptions
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.Locale
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
@@ -35,6 +42,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var tvCongestion: TextView
     private lateinit var btnConnect: Button
     private lateinit var btnStart: Button
+    private lateinit var etSearch: EditText      // ← POI 검색창
+    private lateinit var btnSearch: Button       // ← POI 검색 버튼
 
     private var userId = 1001
     private var isTracking = false
@@ -61,19 +70,122 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         tvCongestion = findViewById(R.id.tvCongestion)
         btnConnect   = findViewById(R.id.btnConnect)
         btnStart     = findViewById(R.id.btnStart)
+        etSearch     = findViewById(R.id.etSearch)   // ← POI 검색창
+        btnSearch    = findViewById(R.id.btnSearch)  // ← POI 검색 버튼
 
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
 
-        locationManager = CrowdLocationManager(this)
-        serverClient    = ServerClient()
+        locationManager    = CrowdLocationManager(this)
+        serverClient       = ServerClient()
         locationRepository = LocationRepository(serverClient, lifecycleScope, userId)
 
         btnConnect.setOnClickListener { connectToServer() }
         btnStart.setOnClickListener   { toggleTracking() }
 
+        // ── POI 검색 버튼 클릭 ────────────────────────────────────────────
+        btnSearch.setOnClickListener { searchPlace() }
+
+        // ── 키보드 검색(엔터) 버튼으로도 동작 ────────────────────────────
+        etSearch.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                searchPlace()
+                true
+            } else false
+        }
+
         requestLocationPermission()
+    }
+
+    // ── POI 검색 ─────────────────────────────────────────────────────────
+    // Android 내장 Geocoder로 장소 이름 → 좌표 변환 (별도 API 키 불필요)
+    // 검색 결과가 없을 때만 "대구" 붙여서 재시도 (지역명 없는 검색어 대비)
+    // 검색 후 지도 이동 + 서버 연결 시 혼잡도 자동 조회
+    private fun searchPlace() {
+        val query = etSearch.text.toString().trim()
+        if (query.isEmpty()) {
+            Toast.makeText(this, "검색어를 입력하세요", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 키보드 숨기기
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(etSearch.windowToken, 0)
+
+        lifecycleScope.launch {
+            // Geocoder는 블로킹 I/O → IO 스레드에서 실행
+            val latLng = withContext(Dispatchers.IO) {
+                try {
+                    val geocoder = Geocoder(this@MainActivity, Locale.KOREAN)
+
+                    // [FIX] 먼저 검색어 그대로 시도 → 결과 없을 때만 "대구" 붙여서 재시도
+                    // 코엑스, 강남역 등 유명 장소는 그대로 검색해도 정확히 나옴
+                    @Suppress("DEPRECATION")
+                    val results = geocoder.getFromLocationName(query, 1)
+                    if (!results.isNullOrEmpty()) {
+                        LatLng(results[0].latitude, results[0].longitude)
+                    } else {
+                        // 결과 없을 때만 "대구" 붙여서 재시도
+                        @Suppress("DEPRECATION")
+                        val fallback = geocoder.getFromLocationName("$query 대구", 1)
+                        if (!fallback.isNullOrEmpty()) {
+                            LatLng(fallback[0].latitude, fallback[0].longitude)
+                        } else null
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
+            if (latLng == null) {
+                Toast.makeText(this@MainActivity, "\"$query\" 장소를 찾을 수 없습니다", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            // [FIX] 현재 줌 레벨 유지하면서 지도 이동 (15f 미만이면 15f로 맞춤)
+            val currentZoom = if (::googleMap.isInitialized) googleMap.cameraPosition.zoom else 15f
+            val targetZoom = maxOf(currentZoom, 15f)
+            googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, targetZoom))
+
+            // 서버 연결된 경우 혼잡도 자동 조회
+            if (serverClient.isConnected()) {
+                val congestion = serverClient.getCongestion(latLng.latitude, latLng.longitude)
+                if (congestion != null) {
+                    tvLocation.text = "위치: ${String.format("%.6f", latLng.latitude)}, ${String.format("%.6f", latLng.longitude)}"
+                    tvCongestion.text = "혼잡도: ${congestion.levelKorean()} (${(congestion.ratio * 100).toInt()}%)"
+                    tvCongestion.setTextColor(congestion.color())
+
+                    // ── 이전 탭 원/마커 제거 후 새로 그리기 ──────────────
+                    selectedCircle?.remove()
+                    selectedMarker?.remove()
+
+                    selectedCircle = googleMap.addCircle(
+                        CircleOptions()
+                            .center(latLng)
+                            .radius(200.0)
+                            .fillColor((congestion.color() and 0x00FFFFFF) or 0x4D000000)
+                            .strokeColor(congestion.color())
+                            .strokeWidth(5f)
+                    )
+                    selectedMarker = googleMap.addMarker(
+                        MarkerOptions()
+                            .position(latLng)
+                            .title("$query — 혼잡도: ${congestion.levelKorean()} (${(congestion.ratio * 100).toInt()}%)")
+                    )
+                    selectedMarker?.showInfoWindow()
+                } else {
+                    Toast.makeText(this@MainActivity, "혼잡도 데이터를 받지 못했습니다", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                // 서버 미연결이면 지도 이동만 수행
+                Toast.makeText(
+                    this@MainActivity,
+                    "\"$query\" 위치로 이동했습니다. 혼잡도 조회는 서버 연결 후 가능합니다",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     override fun onMapReady(map: GoogleMap) {
@@ -131,6 +243,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         .position(latLng)
                         .title("혼잡도: ${congestion.levelKorean()} (${(congestion.ratio * 100).toInt()}%)")
                 )
+
+                // [FIX] 탭한 위치로 현재 줌 레벨 유지하며 이동 (15f 미만이면 15f로 맞춤)
+                val currentZoom = googleMap.cameraPosition.zoom
+                val targetZoom = maxOf(currentZoom, 15f)
+                googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, targetZoom))
             }
         }
     }
