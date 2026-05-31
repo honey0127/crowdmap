@@ -23,7 +23,6 @@ public:
      */
     void update(int32_t userId, std::chrono::steady_clock::time_point now) {
         m_events.push_back({userId, now});
-        cleanup(now);
     }
 
     /**

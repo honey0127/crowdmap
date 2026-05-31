@@ -123,6 +123,7 @@ void EpollServer::handleAccept() {
         }
 
         clients_[cfd].fd = cfd;
+        generations_[cfd].store(0);  // [B-1 추가] 새 연결 시 generation 초기화
         Log::info("[EpollServer] client connected fd=" + std::to_string(cfd));
     }
 }
@@ -130,6 +131,14 @@ void EpollServer::handleAccept() {
 void EpollServer::closeClient(int fd) {
     epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
     close(fd);
+
+    // [B-1 추가] fd 닫을 때 generation 증가
+    // → ThreadPool 태스크가 이전 연결의 fd 로 send 하는 레이스 방지
+    // → 태스크 실행 시점에 generation 이 다르면 send 를 건너뜀
+    if (generations_.count(fd)) {
+        generations_[fd].fetch_add(1);
+    }
+
     clients_.erase(fd);
     Log::info("[EpollServer] client disconnected fd=" + std::to_string(fd));
 }
@@ -147,13 +156,29 @@ void EpollServer::handleRead(ClientContext& ctx) {
             ctx.inbuf.append(static_cast<char*>(chunk), static_cast<size_t>(got));
             pool_.deallocate(chunk);
 
-            // 버퍼에서 '\n' 단위로 완성된 줄을 모두 추출
+            // [B-2 추가] inbuf 크기 상한 64KB 검사
+            // '\n' 없이 데이터를 계속 전송하는 악성/버그 클라이언트가
+            // 서버 메모리를 고갈시키는 DoS 공격 방지
+            if (ctx.inbuf.size() > 65536) {
+                Log::warn("[EpollServer] inbuf overflow fd=" + std::to_string(fd)
+                          + " size=" + std::to_string(ctx.inbuf.size()) + " → 연결 종료");
+                closeClient(fd);
+                return;
+            }
+
+            // [B-7 추가] 파싱 루프 상한 64줄
+            // Android 10초 배치 전송 시 수십 줄이 한 번에 들어올 수 있음
+            // 리액터 스레드가 파싱에 독점되면 다른 클라이언트 응답이 지연됨
+            // → 한 번의 handleRead 에서 최대 64줄만 파싱하고 나머지는 다음 epoll 이벤트로 넘김
+            size_t parsedLines = 0;
             size_t pos;
-            while ((pos = ctx.inbuf.find('\n')) != std::string::npos) {
+            while (parsedLines < 64 &&  // [B-7 추가] 리액터 점유 상한
+                   (pos = ctx.inbuf.find('\n')) != std::string::npos) {
                 size_t len = pos;
                 if (len > 0 && ctx.inbuf[len - 1] == '\r') --len;  // CRLF 보정
                 parseLine(ctx, std::string_view(ctx.inbuf.data(), len));
                 ctx.inbuf.erase(0, pos + 1);
+                parsedLines++;
             }
             // got < CHUNK_SIZE 여도 곧장 종료하지 않고 한 번 더 recv → EAGAIN 으로 확실히 비움
         } else if (got == 0) {
@@ -197,13 +222,19 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
     // ── [Query] 조회(userId == 0): 블로킹 가능성이 있으므로 ThreadPool 로 오프로드 ──
     // this 가 아니라 의존 컴포넌트들을 포인터로 캡처한다.
     // (리액터/서버 객체보다 이 컴포넌트들이 더 오래 살아남도록 main 에서 수명을 보장)
-    const int             fd      = ctx.fd;
-    SpatialDensityEngine* engine  = &densityEngine_;
-    ZoneMapper*           zm      = &zoneMapper_;
-    CongestionRouter*     router  = &congestionRouter_;
-    CacheManager*         cache   = &cacheManager_;
+    const int             fd         = ctx.fd;
+    const uint64_t        generation = generations_.count(fd)
+                                       ? generations_[fd].load()
+                                       : 0;  // [B-1 추가] 태스크 생성 시점의 generation 캡처
+    SpatialDensityEngine* engine     = &densityEngine_;
+    ZoneMapper*           zm         = &zoneMapper_;
+    CongestionRouter*     router     = &congestionRouter_;
+    CacheManager*         cache      = &cacheManager_;
 
-    threadPool_.enqueue([fd, lat, lon, engine, zm, router, cache]() {
+    // [B-1 추가] generations_ 를 캡처하여 send 직전에 generation 검증
+    auto* gens = &generations_;
+
+    threadPool_.enqueue([fd, generation, lat, lon, engine, zm, router, cache, gens]() {
         // 클릭 지점 주변 3x3 그리드의 실시간 밀도(로컬 + 가상 유저)
         size_t localDensity = engine->getDensity(lat, lon);
 
@@ -213,6 +244,7 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
         if (zoneId == -1) {
             response = "RELAXED|0.0\n";
         } else {
+            // [B-4 확인] cache->get() 중복 제거 — router->resolve() 내부에서 처리
             CongestionResult result;
             if (!cache->get(zoneId, result)) {
                 result = router->resolve(lat, lon,
@@ -221,6 +253,13 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
             }
             response = std::string(result.levelString()) + "|"
                        + std::to_string(result.ratio) + "\n";
+        }
+
+        // [B-1 추가] send 직전 generation 검증
+        // closeClient() 이후 동일 fd 가 새 연결에 재사용됐으면 generation 이 달라짐
+        // → generation 불일치 시 send 를 건너뛰어 엉뚱한 클라이언트에게 전송하는 버그 방지
+        if (gens->count(fd) && (*gens)[fd].load() != generation) {
+            return;  // fd 재사용 감지 → 전송 취소
         }
 
         // MSG_NOSIGNAL: 상대가 이미 닫은 소켓에 보내도 SIGPIPE 로 죽지 않음
