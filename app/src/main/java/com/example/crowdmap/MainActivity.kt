@@ -2,6 +2,7 @@ package com.example.crowdmap
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
@@ -10,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.example.crowdmap.ble.BleScanner
 import com.example.crowdmap.location.CrowdLocationManager
 import com.example.crowdmap.location.LocationRepository
 import com.example.crowdmap.model.CongestionData
@@ -29,6 +31,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var serverClient: ServerClient
     private lateinit var locationRepository: LocationRepository
     private lateinit var googleMap: GoogleMap
+    private lateinit var bleScanner: BleScanner
 
     private lateinit var tvStatus: TextView
     private lateinit var tvLocation: TextView
@@ -50,6 +53,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     companion object {
         const val LOCATION_PERMISSION_REQUEST = 1001
+        const val BLUETOOTH_PERMISSION_REQUEST = 1002
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,12 +72,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         locationManager = CrowdLocationManager(this)
         serverClient    = ServerClient()
-        locationRepository = LocationRepository(serverClient, lifecycleScope, userId)
+        bleScanner      = BleScanner(this)
+        locationRepository = LocationRepository(serverClient, lifecycleScope, userId, bleScanner)
 
         btnConnect.setOnClickListener { connectToServer() }
         btnStart.setOnClickListener   { toggleTracking() }
 
         requestLocationPermission()
+        requestBluetoothPermission()
     }
 
     override fun onMapReady(map: GoogleMap) {
@@ -156,6 +162,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         btnStart.text = "추적 중지"
         tvStatus.text = "📍 위치 추적 중..."
 
+        // BLE 스캔 시작 (가능한 경우)
+        if (bleScanner.isAvailable()) {
+            bleScanner.startScan()
+        }
+
         locationManager.startLocationUpdates { lat, lng ->
             currentLatLng = LatLng(lat, lng)
             tvLocation.text = "위치: $lat, $lng"
@@ -188,6 +199,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         btnStart.text = "추적 시작"
         tvStatus.text = "추적 중지됨"
         locationManager.stopLocationUpdates()
+        bleScanner.stopScan()
     }
 
     private fun updateCongestionUI(data: CongestionData, lat: Double, lng: Double) {
@@ -229,6 +241,21 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 ),
                 LOCATION_PERMISSION_REQUEST
             )
+        }
+    }
+
+    private fun requestBluetoothPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.BLUETOOTH_SCAN
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.BLUETOOTH_SCAN),
+                    BLUETOOTH_PERMISSION_REQUEST
+                )
+            }
         }
     }
 
