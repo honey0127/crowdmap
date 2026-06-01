@@ -19,6 +19,7 @@
 #include "PublicDataFeeder.h"
 #include "SeoulCityDataClient.h"
 #include "DaeguTrafficClient.h"
+#include "RedisClient.h"
 
 static std::string requireEnv(const char* key) {
     const char* val = std::getenv(key);
@@ -56,16 +57,28 @@ int main() {
     const int         port        = std::stoi(optionalEnv("SERVER_PORT", "8765"));
 
     // ── 수명(destruction) 순서가 중요하다 ──────────────────────────────
-    // 선언 순서:  zoneMapper → cacheManager → densityEngine → router
-    //            → feeder → threadPool → (cleanupThread) → server
-    // 소멸은 역순이므로 server 가 가장 먼저, threadPool 이 그 다음에 소멸한다.
-    // ThreadPool 소멸자가 워커를 join 할 때, 오프로드된 조회 작업이
-    // 여전히 densityEngine/router/cache 를 참조하더라도 이들은 아직 살아 있다.
+    // 선언 순서:  zoneMapper → cacheManager → densityEngine → redisClient
+    //            → router → feeder → threadPool → cleanupThread → server
+    // 소멸은 역순이므로 server 가 가장 먼저, redisClient 가 densityEngine 이후에 소멸한다.
 
     // 2. 비즈니스 컴포넌트
     ZoneMapper           zoneMapper;
     CacheManager         cacheManager(30, 1000);
     SpatialDensityEngine densityEngine;
+
+    // Redis 연결 및 이전 데이터 복원
+    const std::string redisHost = optionalEnv("REDIS_HOST", "127.0.0.1");
+    const int         redisPort = std::stoi(optionalEnv("REDIS_PORT", "6379"));
+    std::unique_ptr<RedisClient> redisClient;
+    try {
+        redisClient = std::make_unique<RedisClient>(redisHost, redisPort);
+        Log::info("Redis 연결 성공 (" + redisHost + ":" + std::to_string(redisPort) + ")");
+        densityEngine.setRedis(redisClient.get());
+        densityEngine.restoreFromRedis(*redisClient);
+    } catch (const std::exception& e) {
+        // Redis 없어도 서버는 메모리 모드로 계속 동작
+        Log::err(std::string("Redis 연결 실패 - 영속성 비활성화: ") + e.what());
+    }
 
     CongestionRouter router;
     router.addClient(std::make_shared<SeoulCityDataClient>(seoulApiKey));
@@ -94,7 +107,6 @@ int main() {
     feeder.start();   // 5분 주기 서울시 API → 가상 유저 주입
 
     // 밀도 엔진 청소: GridZone 5분 만료 데이터/빈 그리드 제거
-    // (옛 DeadSessionSweeper 의 Ghost 유저 정리 역할을 이 경로가 대체)
     g_cleanupRunning = true;
     cleanupThread = std::thread([&densityEngine]() {
         while (g_cleanupRunning) {
