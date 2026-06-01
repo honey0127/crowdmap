@@ -4,11 +4,17 @@
 #include <vector>
 #include <unordered_map>
 #include <shared_mutex>
-#include <mutex>          // std::unique_lock (shared_mutex 헤더엔 없음)
+#include <mutex>
 #include <memory>
 #include <chrono>
 #include "SpatialHash.h"
 #include "GridZone.h"
+
+// 기기들이 P2P 집계 후 서버에 올리는 존 단위 밀도 리포트
+struct ZoneDensityReport {
+    int count;
+    std::chrono::steady_clock::time_point timestamp;
+};
 
 class SpatialDensityEngine {
 private:
@@ -19,6 +25,10 @@ private:
 
     static constexpr size_t NUM_STRIPES = 1024;
     std::vector<std::unique_ptr<Bucket>> m_buckets;
+
+    // 존 밀도 리포트 저장소 (zoneId → 최신 리포트)
+    std::unordered_map<int, ZoneDensityReport> m_zoneReports;
+    std::shared_mutex m_zoneReportsMutex;
 
 public:
     SpatialDensityEngine() {
@@ -73,6 +83,24 @@ public:
         return totalGps;
     }
 
+    // P2P 집계 리포트 기록 (zoneId 단위, 5분 TTL)
+    void recordZoneDensity(int zoneId, int count) {
+        auto now = std::chrono::steady_clock::now();
+        std::unique_lock<std::shared_mutex> lock(m_zoneReportsMutex);
+        m_zoneReports[zoneId] = {count, now};
+    }
+
+    // 유효한(5분 이내) 존 밀도 리포트 반환. 없거나 만료되면 -1 반환
+    int getZoneReport(int zoneId) {
+        std::shared_lock<std::shared_mutex> lock(m_zoneReportsMutex);
+        auto it = m_zoneReports.find(zoneId);
+        if (it == m_zoneReports.end()) return -1;
+
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - it->second.timestamp).count();
+        return (elapsed <= 300) ? it->second.count : -1;
+    }
+
     void globalCleanup() {
         auto now = std::chrono::steady_clock::now();
         for (auto& bucket : m_buckets) {
@@ -86,6 +114,14 @@ public:
                     ++it;
                 }
             }
+        }
+
+        // 만료된 존 밀도 리포트 정리
+        std::unique_lock<std::shared_mutex> zrLock(m_zoneReportsMutex);
+        for (auto it = m_zoneReports.begin(); it != m_zoneReports.end(); ) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                now - it->second.timestamp).count();
+            it = (elapsed > 300) ? m_zoneReports.erase(it) : ++it;
         }
     }
 };
