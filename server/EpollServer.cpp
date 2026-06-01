@@ -173,6 +173,33 @@ void EpollServer::handleRead(ClientContext& ctx) {
 void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
     if (line.empty()) return;
 
+    // ── [Zone Density Report] P2P 집계 메시지: "zone=<id>,density=<N>" ──
+    // 기기들이 Nearby Connections 없이도 BLE 카운트를 존 단위로 집계해 전송한다.
+    // 서버 커넥션 수를 1/N으로 줄이는 핵심 경량 포맷.
+    constexpr std::string_view ZONE_PREFIX = "zone=";
+    if (line.substr(0, ZONE_PREFIX.size()) == ZONE_PREFIX) {
+        size_t dComma = line.find(',', ZONE_PREFIX.size());
+        if (dComma == std::string_view::npos) return;
+
+        std::string_view zoneId_sv  = line.substr(ZONE_PREFIX.size(), dComma - ZONE_PREFIX.size());
+        std::string_view density_sv = line.substr(dComma + 1);
+
+        constexpr std::string_view DENSITY_PREFIX = "density=";
+        if (density_sv.substr(0, DENSITY_PREFIX.size()) != DENSITY_PREFIX) return;
+        density_sv = density_sv.substr(DENSITY_PREFIX.size());
+
+        int zoneId = -1, density = 0;
+        std::from_chars(zoneId_sv.data(),  zoneId_sv.data()  + zoneId_sv.size(),  zoneId);
+        std::from_chars(density_sv.data(), density_sv.data() + density_sv.size(), density);
+
+        if (zoneId >= 0 && density > 0) {
+            densityEngine_.recordZoneDensity(zoneId, density);
+            Log::info("[EpollServer] zone report: zone=" + std::to_string(zoneId)
+                      + " density=" + std::to_string(density));
+        }
+        return;
+    }
+
     size_t comma1 = line.find(',');
     size_t comma2 = line.find(',', comma1 + 1);
     if (comma1 == std::string_view::npos || comma2 == std::string_view::npos) return;
@@ -221,7 +248,7 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
     CacheManager*         cache   = &cacheManager_;
 
     threadPool_.enqueue([fd, lat, lon, engine, zm, router, cache]() {
-        // 클릭 지점 주변 3x3 그리드의 실시간 밀도(로컬 + 가상 유저)
+        // 클릭 지점 주변 3x3 그리드의 실시간 밀도(GPS + BLE 보정 포함)
         size_t localDensity = engine->getDensity(lat, lon);
 
         int zoneId = zm->coordinateToZoneId(lat, lon);
@@ -230,10 +257,17 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
         if (zoneId == -1) {
             response = "RELAXED|0.0\n";
         } else {
+            // P2P 집계 리포트가 있으면 GPS 밀도와 비교해 더 큰 값을 사용
+            // (dense zone에서 GPS 카운트가 과소 추정될 때 zone report로 보정)
+            int zoneReport = engine->getZoneReport(zoneId);
+            size_t effectiveDensity = (zoneReport > 0)
+                ? std::max(localDensity, static_cast<size_t>(zoneReport))
+                : localDensity;
+
             CongestionResult result;
             if (!cache->get(zoneId, result)) {
                 result = router->resolve(lat, lon,
-                                         static_cast<int>(localDensity),
+                                         static_cast<int>(effectiveDensity),
                                          *cache, zoneId);
             }
             response = std::string(result.levelString()) + "|"
