@@ -204,18 +204,35 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
 
     std::string_view user_id_sv = line.substr(0, comma1);
     std::string_view lat_sv     = line.substr(comma1 + 1, comma2 - comma1 - 1);
-    std::string_view lon_sv     = line.substr(comma2 + 1);
 
-    int    userId = 0;
+    // 세 번째 필드 이후에 선택적 BLE 필드가 올 수 있음
+    // 형식: "userId,lat,lon" 또는 "userId,lat,lon,ble=N"
+    size_t comma3 = line.find(',', comma2 + 1);
+    std::string_view lon_sv = (comma3 == std::string_view::npos)
+                              ? line.substr(comma2 + 1)
+                              : line.substr(comma2 + 1, comma3 - comma2 - 1);
+
+    int    userId   = 0;
     double lat = 0.0, lon = 0.0;
+    int    bleCount = 0;
 
     std::from_chars(user_id_sv.data(), user_id_sv.data() + user_id_sv.size(), userId);
     lat = std::atof(std::string(lat_sv).c_str());
     lon = std::atof(std::string(lon_sv).c_str());
 
+    // "ble=N" 필드 파싱 (존재하는 경우)
+    if (comma3 != std::string_view::npos) {
+        std::string_view ble_sv = line.substr(comma3 + 1);
+        constexpr std::string_view BLE_PREFIX = "ble=";
+        if (ble_sv.substr(0, BLE_PREFIX.size()) == BLE_PREFIX) {
+            std::string_view ble_val = ble_sv.substr(BLE_PREFIX.size());
+            std::from_chars(ble_val.data(), ble_val.data() + ble_val.size(), bleCount);
+        }
+    }
+
     // ── [Update] 위치 갱신: 밀도 엔진에 기록만, 응답 없음(Silent Update) ──
     if (userId != 0) {
-        densityEngine_.recordLocation(userId, lat, lon);
+        densityEngine_.recordLocation(userId, lat, lon, bleCount);
         return;
     }
 

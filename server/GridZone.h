@@ -4,23 +4,21 @@
 #include <deque>
 #include <chrono>
 #include <cstdint>
+#include <algorithm>
 
-/**
- * @brief 그리드 단위의 세부 구역 데이터
- * 슬라이딩 윈도우(5분) 기반으로 유효한 사용자 이벤트를 관리합니다.
- */
 struct UserEvent {
     int32_t userId;
     std::chrono::steady_clock::time_point timestamp;
 };
 
+// BLE 스캔 결과 이벤트 (단말기가 감지한 주변 BLE 기기 수)
+struct BleEvent {
+    int bleCount;
+    std::chrono::steady_clock::time_point timestamp;
+};
+
 class GridZone {
 public:
-    /**
-     * @brief 사용자 위치 이벤트 기록 및 만료 데이터 정리
-     * @param userId 사용자 ID
-     * @param now 현재 시간 (성능을 위해 외부에서 전달)
-     */
     void update(int32_t userId, std::chrono::steady_clock::time_point now) {
         m_events.push_back({userId, now});
     }
@@ -33,9 +31,12 @@ public:
         m_events.push_back({userId, originalTime});
     }
 
-    /**
-     * @brief 300초(5분)가 지난 데이터 제거
-     */
+    // BLE 감지 기기 수를 5분 슬라이딩 윈도우에 기록
+    void updateBle(int bleCount, std::chrono::steady_clock::time_point now) {
+        m_bleEvents.push_back({bleCount, now});
+        cleanupBle(now);
+    }
+
     void cleanup(std::chrono::steady_clock::time_point now) {
         while (!m_events.empty()) {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
@@ -48,15 +49,34 @@ public:
         }
     }
 
-    /**
-     * @brief 현재 구역의 유효 사용자 밀도 반환
-     */
+    void cleanupBle(std::chrono::steady_clock::time_point now) {
+        while (!m_bleEvents.empty()) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                now - m_bleEvents.front().timestamp).count();
+            if (elapsed > 300) {
+                m_bleEvents.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
     size_t getDensity() const {
         return m_events.size();
     }
 
+    // 최근 BLE 스캔 이벤트 중 최대값 반환 (없으면 0)
+    int getMaxBleCount() const {
+        int maxBle = 0;
+        for (const auto& ev : m_bleEvents) {
+            maxBle = std::max(maxBle, ev.bleCount);
+        }
+        return maxBle;
+    }
+
 private:
     std::deque<UserEvent> m_events;
+    std::deque<BleEvent>  m_bleEvents;
 };
 
 #endif // GRID_ZONE_H
