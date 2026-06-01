@@ -26,6 +26,14 @@ public:
     }
 
     /**
+     * @brief 서버 재시작 후 Redis에서 복원할 때 사용.
+     * 과거 타임스탬프를 그대로 주입하며 만료 체크는 globalCleanup()이 처리.
+     */
+    void injectHistorical(int32_t userId, std::chrono::steady_clock::time_point originalTime) {
+        m_events.push_back({userId, originalTime});
+    }
+
+    /**
      * @brief 300초(5분)가 지난 데이터 제거
      */
     void cleanup(std::chrono::steady_clock::time_point now) {
