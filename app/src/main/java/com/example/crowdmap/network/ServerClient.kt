@@ -17,11 +17,11 @@ class ServerClient {
     companion object {
         //val SERVER_IP: String = BuildConfig.SERVER_IP
         //val SERVER_IP : String = "172.20.127.154"
-        val SERVER_IP : String = "192.168.0.8"
+        val SERVER_IP : String = "172.20.127.234"
 
         const val SERVER_PORT = 5001
         const val CONNECT_TIMEOUT_MS = 5000
-        const val READ_TIMEOUT_MS = 5000
+        const val READ_TIMEOUT_MS = 10000  // 외부 API 최대 2s + 여유 8s
     }
 
     private var socket: Socket? = null
