@@ -2,6 +2,7 @@
 #include <hiredis/hiredis.h>
 #include <chrono>
 #include <cstdio>
+#include <cinttypes>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -35,8 +36,9 @@ public:
     // recordLocation 호출 시마다 Redis에 이벤트 저장 (TTL 300초)
     void saveEvent(int64_t spatialKey, int32_t userId, long long unixTs) {
         std::lock_guard<std::mutex> lock(mutex_);
+        // [FIX] int64_t 포맷 PRId64 사용 (플랫폼 독립적)
         auto* r = static_cast<redisReply*>(
-            redisCommand(ctx_, "SET cm:e:%lld:%d %lld EX 300",
+            redisCommand(ctx_, "SET cm:e:%" PRId64 ":%d %lld EX 300",
                          spatialKey, userId, unixTs));
         if (r) freeReplyObject(r);
     }
@@ -61,8 +63,9 @@ public:
 
                 int64_t sk = 0;
                 int32_t uid = 0;
-                // 키 파싱: "cm:e:{spatialKey}:{userId}"
-                if (std::sscanf(key.c_str(), "cm:e:%lld:%d", &sk, &uid) != 2) continue;
+                // [FIX] int64_t 파싱 포맷 SCNd64 사용
+                if (std::sscanf(key.c_str(),
+                                "cm:e:%" SCNd64 ":%d", &sk, &uid) != 2) continue;
 
                 auto* val = static_cast<redisReply*>(
                     redisCommand(ctx_, "GET %s", key.c_str()));
