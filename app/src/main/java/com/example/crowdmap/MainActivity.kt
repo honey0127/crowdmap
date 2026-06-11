@@ -39,7 +39,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var btnConnect: Button
     private lateinit var btnStart: Button
 
-    private var userId = 1001
+    // 단말마다 고유한 userId를 한 번 생성해 영구 저장한다.
+    // 모든 단말이 같은 값(예: 1001)을 쓰면 서버에서 사용자 구분이 불가능해
+    // 대규모 동시 접속 시 집계가 왜곡된다. (0은 조회 전용으로 예약됨)
+    private val userId: Int by lazy {
+        val prefs = getSharedPreferences("crowdmap", MODE_PRIVATE)
+        var id = prefs.getInt("user_id", 0)
+        if (id == 0) {
+            id = (1..Int.MAX_VALUE).random()
+            prefs.edit().putInt("user_id", id).apply()
+        }
+        id
+    }
     private var isTracking = false
     private var currentLatLng: LatLng? = null
 
@@ -162,6 +173,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         btnStart.text = "추적 중지"
         tvStatus.text = "📍 위치 추적 중..."
 
+        // 정지 상태에서도 배치마다 presence heartbeat가 나가도록 알림
+        locationRepository.setTracking(true)
+
         // BLE 스캔 시작 (가능한 경우)
         if (bleScanner.isAvailable()) {
             bleScanner.startScan()
@@ -198,6 +212,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         isTracking = false
         btnStart.text = "추적 시작"
         tvStatus.text = "추적 중지됨"
+        locationRepository.setTracking(false)
         locationManager.stopLocationUpdates()
         bleScanner.stopScan()
     }
