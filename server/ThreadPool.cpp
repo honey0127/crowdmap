@@ -1,7 +1,8 @@
 #include "ThreadPool.h"
 
 //생성자 : numThreads(=4)개 워커를 미리 생성
-ThreadPool::ThreadPool(int numThreads) {
+ThreadPool::ThreadPool(int numThreads, size_t maxQueueSize)
+        : maxQueue(maxQueueSize) {
     for (int i = 0; i < numThreads; ++i) {
         workers.emplace_back([this] { workerFunction(); });
     }
@@ -19,12 +20,21 @@ ThreadPool::~ThreadPool() {
     }
 }
 
-void ThreadPool::enqueue(std::function<void()> task) {
+bool ThreadPool::enqueue(std::function<void()> task) {
     {
         std::unique_lock<std::mutex> lock(taskMutex); // 락 걸고
-        tasks.push(task); // 큐에 추가
+        // 포화 상태에서 계속 받으면 큐가 무한히 자라 지연이 폭발한다.
+        // 받지 않고 false를 돌려줘 호출자가 즉시 대체 응답(load shedding)하게 한다.
+        if (tasks.size() >= maxQueue) return false;
+        tasks.push(std::move(task)); // 큐에 추가 (복사 대신 move)
     }
     cv.notify_one(); // 자고 있는 워커 하나만 깨움(notify_all 이 아닌 이유 : 불필요한 wake-up 방지
+    return true;
+}
+
+size_t ThreadPool::pending() {
+    std::unique_lock<std::mutex> lock(taskMutex);
+    return tasks.size();
 }
 
 void ThreadPool::workerFunction() {
@@ -33,10 +43,10 @@ void ThreadPool::workerFunction() {
         {
             std::unique_lock<std::mutex> lock(taskMutex);
             cv.wait(lock, [this] { return !tasks.empty() || stop; }); // 할 일 없으면 CPU 0%에서 대기
-            
+
             if (stop && tasks.empty()) break; // 종료 조건
             if (tasks.empty()) continue;
-            
+
             task = std::move(tasks.front()); // 큐에서 꺼내고
             tasks.pop(); // 락 헤재 후 task 실행 ( 락 밖에서 실행해야 병렬 처리됨 )
         }

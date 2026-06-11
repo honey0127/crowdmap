@@ -51,6 +51,11 @@ class LocationRepository(
         private const val BATCH_INTERVAL_MS = 10_000L
         private const val BATCH_JITTER_MS = 1_000L
 
+        // 밀집 지역(존 리포트 모드)의 최소 전송 주기. 개별 좌표 대신
+        // 존 리포트 한 줄이 집계를 대표하므로(서버 TTL 5분) 주기를 늦춰도
+        // 정확도 손실 없이 서버 유입량만 줄어든다.
+        private const val DENSE_INTERVAL_MS = 30_000L
+
         // 서버 SpatialHash::GRID_SIZE(0.001도 ≈ 100m)와 동일한 격자 크기
         private const val DEDUP_GRID = 0.001
     }
@@ -96,8 +101,12 @@ class LocationRepository(
         if (isRunning.getAndSet(true)) return
 
         scope.launch(Dispatchers.IO) {
+            // 다음 배치까지의 대기 시간. 서버 힌트(interval=N)와 밀집 모드에
+            // 따라 매 주기 다시 계산된다.
+            var nextDelayMs = BATCH_INTERVAL_MS
+
             while (isActive) {
-                delay(BATCH_INTERVAL_MS + Random.nextLong(-BATCH_JITTER_MS, BATCH_JITTER_MS))
+                delay(nextDelayMs + Random.nextLong(-BATCH_JITTER_MS, BATCH_JITTER_MS))
 
                 sendBuffer.clear()
 
@@ -107,6 +116,7 @@ class LocationRepository(
                 }
 
                 val bleCount = bleScanner?.getCount() ?: 0
+                var denseMode = false
 
                 // ── 방법 2: 밀집 지역 → 존 밀도 리포트로 대체 ──────────────────
                 // 주변 기기가 DENSE_ZONE_THRESHOLD 이상이면 개별 좌표 대신
@@ -114,6 +124,7 @@ class LocationRepository(
                 if (bleCount >= DENSE_ZONE_THRESHOLD && hasLocation) {
                     val zoneId = ZoneIdCalculator.fromCoordinate(lastLat, lastLng)
                     if (zoneId != -1) {
+                        denseMode = true
                         // 채널에 쌓인 개별 좌표는 비워버리고 (이번 배치는 존 리포트로 대체)
                         while (locationChannel.tryReceive().isSuccess) { /* drain */ }
 
@@ -123,7 +134,9 @@ class LocationRepository(
 
                         println("[LocationRepository] 밀집 지역 감지(ble=$bleCount). 존 리포트 전송: zone=$zoneId")
                     }
-                } else {
+                }
+
+                if (!denseMode) {
                     // ── 방법 1: 일반/희박 지역 → 격자 중복 제거 후 개별 좌표 배치 ──
                     dedupCells.clear()
                     while (true) {
@@ -155,6 +168,14 @@ class LocationRepository(
                         }
                     }
                 }
+
+                // ── 다음 주기 결정 (서버 주도 적응형 감압) ──
+                // 서버가 자기 위치 조회 응답에 실어준 권장 주기를 따른다.
+                // (혼잡 존일수록 김 → 서버가 유입량을 원격으로 조절)
+                // 밀집 모드에서는 최소 30초: 존 리포트가 집계를 대표하므로
+                // 자주 보낼 이유가 없다.
+                val hintMs = (serverClient.suggestedIntervalSec?.coerceIn(10, 60) ?: 10) * 1000L
+                nextDelayMs = if (denseMode) maxOf(hintMs, DENSE_INTERVAL_MS) else hintMs
             }
             isRunning.set(false)
         }

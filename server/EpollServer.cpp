@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cerrno>
 #include <charconv>
+#include <poll.h>
 #include <stdexcept>
 
 EpollServer::EpollServer(uint16_t              port,
@@ -48,6 +49,9 @@ EpollServer::EpollServer(uint16_t              port,
     ev.data.fd = listen_fd_;
     epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, listen_fd_, &ev);
 
+    lastStatsAt_ = std::chrono::steady_clock::now();
+    lastSweepAt_ = lastStatsAt_;
+
     Log::info("[EpollServer] listening on port " + std::to_string(port_));
 }
 
@@ -74,7 +78,7 @@ void EpollServer::run() {
     std::vector<epoll_event> events(MAX_EVENTS);
 
     while (running_) {
-        // timeout 1000ms → stop() 신호를 최대 1초 안에 감지
+        // timeout 1000ms → stop() 신호와 주기 작업(통계/유휴 정리)을 최대 1초 안에 처리
         int n = epoll_wait(epoll_fd_, events.data(), MAX_EVENTS, 1000);
         if (n < 0) {
             if (errno == EINTR) continue;
@@ -94,6 +98,17 @@ void EpollServer::run() {
                 auto it = clients_.find(fd);
                 if (it != clients_.end()) handleRead(it->second);
             }
+        }
+
+        // ── 주기 작업: epoll_wait 의 1초 타임아웃이 틱 역할을 한다 ──
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastSweepAt_ >= std::chrono::seconds(SWEEP_INTERVAL_SEC)) {
+            lastSweepAt_ = now;
+            sweepIdleClients();
+        }
+        if (now - lastStatsAt_ >= std::chrono::seconds(STATS_INTERVAL_SEC)) {
+            lastStatsAt_ = now;
+            logStats();
         }
     }
 }
@@ -122,8 +137,13 @@ void EpollServer::handleAccept() {
             continue;
         }
 
-        clients_[cfd].fd = cfd;
-        Log::info("[EpollServer] client connected fd=" + std::to_string(cfd));
+        auto& ctx = clients_[cfd];
+        ctx.fd           = cfd;
+        ctx.lastActivity = std::chrono::steady_clock::now();
+        ++accepted_;
+        // 연결 단위 로그는 핫패스 — 폭증 시 리액터가 터미널 I/O에 직렬화되므로
+        // 디버그 모드에서만 출력하고 평시에는 주기 통계로 대체한다.
+        Log::debug("[EpollServer] client connected fd=" + std::to_string(cfd));
     }
 }
 
@@ -131,11 +151,50 @@ void EpollServer::closeClient(int fd) {
     epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
     close(fd);
     clients_.erase(fd);
-    Log::info("[EpollServer] client disconnected fd=" + std::to_string(fd));
+    ++closed_;
+    Log::debug("[EpollServer] client disconnected fd=" + std::to_string(fd));
+}
+
+// 셀룰러 NAT 뒤의 단말은 FIN 없이 사라진다. TCP keepalive 의 기본 감지는
+// 2시간이라, 애플리케이션 차원에서 무통신 연결을 회수하지 않으면
+// 축제급 트래픽에서 죽은 fd 가 무한히 누적되어 fd 한도가 고갈된다.
+void EpollServer::sweepIdleClients() {
+    auto now = std::chrono::steady_clock::now();
+
+    std::vector<int> idle;
+    for (auto& [fd, ctx] : clients_) {
+        auto idleSec = std::chrono::duration_cast<std::chrono::seconds>(
+            now - ctx.lastActivity).count();
+        if (idleSec > IDLE_TIMEOUT_SEC) idle.push_back(fd);
+    }
+    for (int fd : idle) {
+        ++idleClosed_;
+        closeClient(fd);
+    }
+}
+
+void EpollServer::logStats() {
+    // 완전히 한가하면 침묵 (개발 콘솔 오염 방지)
+    if (clients_.empty() && accepted_ == 0 && closed_ == 0 &&
+        lines_ == 0 && queries_ == 0) {
+        return;
+    }
+    Log::info("[Stats] conns=" + std::to_string(clients_.size())
+              + " accepted=" + std::to_string(accepted_)
+              + " closed=" + std::to_string(closed_)
+              + " idle_closed=" + std::to_string(idleClosed_)
+              + " lines=" + std::to_string(lines_)
+              + " zone_reports=" + std::to_string(zoneReports_)
+              + " queries=" + std::to_string(queries_)
+              + " shed=" + std::to_string(shed_)
+              + " pool_pending=" + std::to_string(threadPool_.pending()));
+    accepted_ = closed_ = idleClosed_ = 0;
+    lines_ = zoneReports_ = queries_ = shed_ = 0;
 }
 
 void EpollServer::handleRead(ClientContext& ctx) {
     const int fd = ctx.fd;
+    ctx.lastActivity = std::chrono::steady_clock::now();
 
     // 논블로킹 소켓이므로 EAGAIN 까지 가능한 만큼 읽는다(레벨 트리거).
     while (true) {
@@ -170,8 +229,44 @@ void EpollServer::handleRead(ClientContext& ctx) {
     }
 }
 
+// 워커 스레드용 송신 헬퍼: 논블로킹 소켓의 부분 전송(short write)과
+// EAGAIN 을 처리한다. 응답이 짧아(수십 바이트) 보통 한 번에 끝나지만,
+// 송신 버퍼가 가득 찬 느린 클라이언트에서는 잠시(최대 300ms) 기다렸다
+// 재시도하고, 그래도 안 되면 폐기한다 — 느린 소비자가 워커를 오래
+// 붙잡으면 그 자체가 새로운 병목이 되기 때문이다.
+void EpollServer::sendAll(int fd, const char* data, size_t len) {
+    size_t off   = 0;
+    int    waits = 0;
+    while (off < len) {
+        ssize_t n = ::send(fd, data + off, len - off, MSG_NOSIGNAL);
+        if (n > 0) {
+            off += static_cast<size_t>(n);
+            continue;
+        }
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) && waits < 3) {
+            pollfd p{};
+            p.fd     = fd;
+            p.events = POLLOUT;
+            ::poll(&p, 1, 100);
+            ++waits;
+            continue;
+        }
+        return;  // 죽었거나 너무 느린 클라이언트: 응답 폐기 (클라이언트 타임아웃이 처리)
+    }
+}
+
+int EpollServer::intervalHintFor(CongestionLevel level) {
+    switch (level) {
+        case CongestionLevel::CROWDED:  return 30;
+        case CongestionLevel::MODERATE: return 15;
+        default:                        return 10;
+    }
+}
+
 void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
     if (line.empty()) return;
+    ++lines_;
 
     // ── [Zone Density Report] P2P 집계 메시지: "zone=<id>,density=<N>" ──
     // 기기들이 Nearby Connections 없이도 BLE 카운트를 존 단위로 집계해 전송한다.
@@ -194,8 +289,9 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
 
         if (zoneId >= 0 && density > 0) {
             densityEngine_.recordZoneDensity(zoneId, density);
-            Log::info("[EpollServer] zone report: zone=" + std::to_string(zoneId)
-                      + " density=" + std::to_string(density));
+            ++zoneReports_;
+            Log::debug("[EpollServer] zone report: zone=" + std::to_string(zoneId)
+                       + " density=" + std::to_string(density));
         }
         return;
     }
@@ -239,24 +335,35 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
     }
 
     // ── [Query] 조회(userId == 0): 블로킹 가능성이 있으므로 ThreadPool 로 오프로드 ──
+    ++queries_;
+    const int zoneId = zoneMapper_.coordinateToZoneId(lat, lon);
+
+    // [fd 재사용 레이스 방지] 워커가 응답을 보내기 전에 이 클라이언트가 끊기면
+    // 리액터가 fd 를 닫고, 새 accept 가 같은 번호를 재사용할 수 있다.
+    // 그 상태에서 워커가 원래 fd 번호로 send 하면 응답이 "엉뚱한 클라이언트"에게 간다.
+    // dup() 은 리액터 스레드에서(=closeClient 와 경합 없이) 호출되므로 안전하고,
+    // 복제된 디스크립터는 원본이 닫혀도 기존 소켓을 계속 가리킨다.
+    const int dupfd = dup(ctx.fd);
+    if (dupfd < 0) {
+        ++shed_;
+        return;  // fd 고갈: 조회 폐기 (클라이언트 타임아웃이 처리)
+    }
+
     // this 가 아니라 의존 컴포넌트들을 포인터로 캡처한다.
     // (리액터/서버 객체보다 이 컴포넌트들이 더 오래 살아남도록 main 에서 수명을 보장)
-    const int             fd      = ctx.fd;
     SpatialDensityEngine* engine  = &densityEngine_;
-    ZoneMapper*           zm      = &zoneMapper_;
     CongestionRouter*     router  = &congestionRouter_;
     CacheManager*         cache   = &cacheManager_;
 
-    threadPool_.enqueue([fd, lat, lon, engine, zm, router, cache]() {
-        // 클릭 지점 주변 3x3 그리드의 실시간 밀도(GPS + BLE 보정 포함)
-        size_t localDensity = engine->getDensity(lat, lon);
-
-        int zoneId = zm->coordinateToZoneId(lat, lon);
+    const bool queued = threadPool_.enqueue([dupfd, lat, lon, zoneId, engine, router, cache]() {
         std::string response;
 
         if (zoneId == -1) {
-            response = "RELAXED|0.0\n";
+            response = "RELAXED|0.0|interval=10\n";
         } else {
+            // 클릭 지점 주변 3x3 그리드의 실시간 밀도(GPS + BLE 보정 포함)
+            size_t localDensity = engine->getDensity(lat, lon);
+
             // P2P 집계 리포트가 있으면 GPS 밀도와 비교해 더 큰 값을 사용
             // (dense zone에서 GPS 카운트가 과소 추정될 때 zone report로 보정)
             int zoneReport = engine->getZoneReport(zoneId);
@@ -264,17 +371,38 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
                 ? std::max(localDensity, static_cast<size_t>(zoneReport))
                 : localDensity;
 
-            CongestionResult result;
-            if (!cache->get(zoneId, result)) {
-                result = router->resolve(lat, lon,
-                                         static_cast<int>(effectiveDensity),
-                                         *cache, zoneId);
-            }
+            // 캐시 확인/single-flight/negative cache 는 router 가 일원화해 처리
+            CongestionResult result = router->resolve(lat, lon,
+                                                      static_cast<int>(effectiveDensity),
+                                                      *cache, zoneId);
+
+            // interval 힌트: 혼잡할수록 클라이언트 리포트 주기를 늦춰
+            // 서버 유입량을 원격으로 줄인다 (클라이언트는 자기 위치 조회
+            // 응답의 힌트만 배치 주기에 반영한다)
             response = std::string(result.levelString()) + "|"
-                       + std::to_string(result.ratio) + "\n";
+                       + std::to_string(result.ratio)
+                       + "|interval=" + std::to_string(intervalHintFor(result.level))
+                       + "\n";
         }
 
-        // MSG_NOSIGNAL: 상대가 이미 닫은 소켓에 보내도 SIGPIPE 로 죽지 않음
-        send(fd, response.c_str(), response.length(), MSG_NOSIGNAL);
+        sendAll(dupfd, response.c_str(), response.length());
+        close(dupfd);
     });
+
+    if (!queued) {
+        // ── Load shedding: 워커 큐 포화 ──
+        // 새 작업을 쌓으면 지연만 폭발한다. stale 캐시가 있으면 그것으로
+        // 즉시 응답하고(혼잡 상황이므로 interval=30 으로 감압 힌트),
+        // 없으면 응답을 생략한다 — 클라이언트 타임아웃이 우아하게 처리.
+        close(dupfd);
+        ++shed_;
+
+        CongestionResult stale;
+        if (zoneId != -1 && cacheManager_.getStale(zoneId, stale, 300)) {
+            std::string resp = std::string(stale.levelString()) + "|"
+                               + std::to_string(stale.ratio) + "|interval=30\n";
+            // 리액터 스레드: 논블로킹 1회 시도만. 안 나가면 폐기.
+            ::send(ctx.fd, resp.c_str(), resp.size(), MSG_NOSIGNAL);
+        }
+    }
 }

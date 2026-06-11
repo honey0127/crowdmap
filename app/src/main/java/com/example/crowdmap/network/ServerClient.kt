@@ -22,7 +22,11 @@ class ServerClient {
 
         const val SERVER_PORT = 8765
         const val CONNECT_TIMEOUT_MS = 5000
-        const val READ_TIMEOUT_MS = 5000
+
+        // 조회 응답 대기 상한. socketLock이 왕복 시간만큼 잡히므로
+        // (그동안 배치 전송이 대기) 너무 길면 폭증 시 지연이 연쇄된다.
+        // 서버는 캐시/stale로 수십 ms 안에 응답하는 것이 정상 경로.
+        const val READ_TIMEOUT_MS = 3000
 
         // ── 자동 재연결 백오프 ──
         // 서버 재시작 시 수천 대의 단말이 같은 순간 재접속을 시도하면
@@ -48,6 +52,14 @@ class ServerClient {
 
     // zoneId → (혼잡도 결과, 수신 시각 ms)
     private val queryCache = ConcurrentHashMap<Int, Pair<CongestionData, Long>>()
+
+    // 서버가 조회 응답에 실어준 권장 리포트 주기(초).
+    // 자기 위치 조회(applyIntervalHint=true)에서만 갱신된다 —
+    // 지도 탭(임의 지점) 조회의 힌트로 내 전송 주기를 바꾸면 안 되기 때문.
+    // null이면 힌트 없음(기본 주기 사용).
+    @Volatile
+    var suggestedIntervalSec: Int? = null
+        private set
 
     suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
         socketLock.withLock { openConnection() }
@@ -115,13 +127,17 @@ class ServerClient {
     }
 
     /**
-     * [Query] 실시간 혼잡도 조회: 맵 클릭 시 서버에 질의하고 응답을 수신함 (Request-Response)
+     * [Query] 실시간 혼잡도 조회: 서버에 질의하고 응답을 수신함 (Request-Response)
      * 같은 존의 최근(15초 이내) 결과는 캐시에서 즉시 반환해 서버 부하와
      * 소켓 락 점유(왕복 대기 중 배치 전송 차단)를 함께 줄인다.
+     *
+     * @param applyIntervalHint 자기 위치 조회일 때만 true로 — 응답의
+     *        "interval=N" 힌트를 위치 리포트 주기에 반영한다.
      */
     suspend fun getCongestion(
         latitude: Double,
-        longitude: Double
+        longitude: Double,
+        applyIntervalHint: Boolean = false
     ): CongestionData? {
         val zoneId = ZoneIdCalculator.fromCoordinate(latitude, longitude)
         if (zoneId != -1) {
@@ -147,10 +163,15 @@ class ServerClient {
                     println("[ServerClient] 조회 응답 수신: $response")
 
                     val parsed = response?.let { parseResponse(it, zoneId) }
-                    if (parsed != null && zoneId != -1) {
-                        queryCache[zoneId] = parsed to System.currentTimeMillis()
+                    if (parsed != null) {
+                        if (zoneId != -1) {
+                            queryCache[zoneId] = parsed.first to System.currentTimeMillis()
+                        }
+                        if (applyIntervalHint) {
+                            suggestedIntervalSec = parsed.second
+                        }
                     }
-                    parsed
+                    parsed?.first
                 } catch (e: Exception) {
                     println("[ServerClient] 조회 실패: ${e.message}")
                     closeConnection()
@@ -160,15 +181,27 @@ class ServerClient {
         }
     }
 
-    private fun parseResponse(response: String, zoneId: Int): CongestionData? {
+    // 응답: "LEVEL|ratio" + 선택 확장 필드("|interval=N" 등).
+    // 알 수 없는 필드는 무시한다 — 서버가 필드를 추가해도 클라이언트가
+    // 깨지지 않는 전방 호환(forward-compatible) 파싱.
+    private fun parseResponse(response: String, zoneId: Int): Pair<CongestionData, Int?>? {
         val parts = response.trim().split("|")
-        return if (parts.size == 2) {
-            CongestionData(
-                level = parts[0].trim(),
-                ratio = parts[1].trim().toDoubleOrNull() ?: 0.0,
-                zoneId = zoneId
-            )
-        } else null
+        if (parts.size < 2) return null
+
+        val data = CongestionData(
+            level = parts[0].trim(),
+            ratio = parts[1].trim().toDoubleOrNull() ?: 0.0,
+            zoneId = zoneId
+        )
+
+        var intervalSec: Int? = null
+        for (i in 2 until parts.size) {
+            val field = parts[i].trim()
+            if (field.startsWith("interval=")) {
+                intervalSec = field.substringAfter("interval=").toIntOrNull()
+            }
+        }
+        return data to intervalSec
     }
 
     fun disconnect() {

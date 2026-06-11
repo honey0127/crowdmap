@@ -14,6 +14,12 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         tools:targetApi="s" />
 
+    <!-- 백그라운드 위치 추적용 포그라운드 서비스 (화면 꺼져도 수집 유지) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- 포그라운드 서비스 알림 표시 (33+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
     <application
@@ -37,6 +43,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".service.TrackingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
     </application>
 
 </manifest>
