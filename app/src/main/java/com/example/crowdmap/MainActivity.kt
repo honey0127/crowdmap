@@ -15,11 +15,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.example.crowdmap.ble.BleScanner
-import com.example.crowdmap.location.CrowdLocationManager
-import com.example.crowdmap.location.LocationRepository
+import com.example.crowdmap.core.TrackingCore
 import com.example.crowdmap.model.CongestionData
-import com.example.crowdmap.network.ServerClient
+import com.example.crowdmap.service.TrackingService
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
@@ -34,13 +32,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
+/**
+ * 지도/버튼 UI 전담 Activity.
+ *
+ * 수집·전송 파이프라인은 TrackingCore(앱 전역 싱글톤)가 소유하고,
+ * 백그라운드 생존은 TrackingService(포그라운드 서비스)가 보장한다.
+ * 이 Activity는 TrackingCore의 StateFlow를 구독해 그리기만 하므로
+ * 화면 회전/백그라운드 전환에도 추적과 소켓 연결이 끊기지 않는다.
+ */
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
-    private lateinit var locationManager: CrowdLocationManager
-    private lateinit var serverClient: ServerClient
-    private lateinit var locationRepository: LocationRepository
     private lateinit var googleMap: GoogleMap
-    private lateinit var bleScanner: BleScanner
 
     private lateinit var tvStatus: TextView
     private lateinit var tvLocation: TextView
@@ -49,10 +51,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var btnStart: Button
     private lateinit var etSearch: EditText      // ← POI 검색창
     private lateinit var btnSearch: Button       // ← POI 검색 버튼
-
-    private var userId = 1001
-    private var isTracking = false
-    private var currentLatLng: LatLng? = null
 
     // ── 지도 탭 시 표시되는 원/마커 (1개만 유지) ──────────────────────────
     private var selectedCircle: Circle? = null
@@ -65,13 +63,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     companion object {
         const val LOCATION_PERMISSION_REQUEST = 1001
         const val BLUETOOTH_PERMISSION_REQUEST = 1002
-        const val DEFAULT_ZOOM = 15f        // 탭/검색 시 확대될 기본 줌 레벨
-        const val CIRCLE_RADIUS_M = 200.0   // 원 반지름 고정 200m
+        const val NOTIFICATION_PERMISSION_REQUEST = 1003
+        const val DEFAULT_ZOOM = 15f
+        const val CIRCLE_RADIUS_M = 200.0
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        TrackingCore.init(this)
 
         tvStatus     = findViewById(R.id.tvStatus)
         tvLocation   = findViewById(R.id.tvLocation)
@@ -84,11 +85,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
-
-        locationManager    = CrowdLocationManager(this)
-        serverClient       = ServerClient()
-        bleScanner         = BleScanner(this)
-        locationRepository = LocationRepository(serverClient, lifecycleScope, userId, bleScanner)
 
         btnConnect.setOnClickListener { connectToServer() }
         btnStart.setOnClickListener   { toggleTracking() }
@@ -106,6 +102,54 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         requestLocationPermission()
         requestBluetoothPermission()
+        requestNotificationPermission()
+
+        observeTrackingState()
+    }
+
+    // TrackingCore의 상태를 구독해 UI에 반영한다.
+    // (회전 후 재생성돼도 StateFlow의 현재 값으로 즉시 복원된다)
+    private fun observeTrackingState() {
+        lifecycleScope.launch {
+            TrackingCore.isTracking.collect { tracking ->
+                btnStart.text = if (tracking) "추적 중지" else "추적 시작"
+                if (tracking) {
+                    tvStatus.text = "📍 위치 추적 중..."
+                } else if (TrackingCore.connected.value) {
+                    tvStatus.text = "✅ 서버 연결됨"
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            TrackingCore.connected.collect { ok ->
+                if (!ok && TrackingCore.isTracking.value) {
+                    // 자동 재연결(백오프)이 백그라운드에서 계속 시도된다
+                    tvStatus.text = "❌ 연결 끊김 (자동 재연결 중...)"
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            TrackingCore.location.collect { loc ->
+                if (loc == null) return@collect
+                tvLocation.text = "위치: ${loc.first}, ${loc.second}"
+                if (TrackingCore.isTracking.value && ::googleMap.isInitialized) {
+                    googleMap.animateCamera(
+                        CameraUpdateFactory.newLatLngZoom(LatLng(loc.first, loc.second), 15f)
+                    )
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            TrackingCore.congestion.collect { data ->
+                val loc = TrackingCore.location.value
+                if (data != null && loc != null && TrackingCore.isTracking.value) {
+                    updateCongestionUI(data, loc.first, loc.second)
+                }
+            }
+        }
     }
 
     // ── POI 검색 ─────────────────────────────────────────────────────────
@@ -156,8 +200,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             googleMap.animateCamera(
                 CameraUpdateFactory.newLatLngZoom(latLng, DEFAULT_ZOOM))
 
-            if (serverClient.isConnected()) {
-                val congestion = serverClient.getCongestion(latLng.latitude, latLng.longitude)
+            if (TrackingCore.isConnected()) {
+                val congestion = TrackingCore.queryCongestion(latLng.latitude, latLng.longitude)
                 if (congestion != null) {
                     tvLocation.text = "위치: ${String.format("%.6f", latLng.latitude)}, " +
                             "${String.format("%.6f", latLng.longitude)}"
@@ -210,24 +254,23 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             googleMap.isMyLocationEnabled = true
-            locationManager.getLastKnownLocation { lat, lng ->
-                googleMap.moveCamera(
-                    CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), DEFAULT_ZOOM))
+            TrackingCore.getLastKnownLocation { lat, lng ->
+                googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), DEFAULT_ZOOM))
             }
         }
 
         googleMap.setOnMapClickListener { latLng ->
-            if (!serverClient.isConnected()) {
+            if (!TrackingCore.isConnected()) {
                 Toast.makeText(this, "먼저 서버에 연결하세요", Toast.LENGTH_SHORT).show()
                 return@setOnMapClickListener
             }
             lifecycleScope.launch {
-                val congestion = serverClient.getCongestion(latLng.latitude, latLng.longitude)
+                val congestion = TrackingCore.queryCongestion(latLng.latitude, latLng.longitude)
                 if (congestion == null) {
-                    val msg = if (!serverClient.isConnected()) "서버 연결이 끊겼습니다. 다시 연결하세요"
+                    val msg = if (!TrackingCore.isConnected()) "서버 연결이 끊겼습니다. 다시 연결하세요"
                     else "혼잡도 데이터를 받지 못했습니다"
                     Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
-                    if (!serverClient.isConnected()) tvStatus.text = "❌ 연결 끊김"
+                    if (!TrackingCore.isConnected()) tvStatus.text = "❌ 연결 끊김"
                     return@launch
                 }
 
@@ -271,62 +314,35 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun connectToServer() {
         tvStatus.text = "연결 중..."
         lifecycleScope.launch {
-            val connected = serverClient.connect()
+            val connected = TrackingCore.connect()
             tvStatus.text = if (connected) "✅ 서버 연결됨" else "❌ 연결 실패"
         }
     }
 
     private fun toggleTracking() {
-        if (!isTracking) startTracking() else stopTracking()
-    }
+        if (TrackingCore.isTracking.value) {
+            TrackingService.stop(this)
+            return
+        }
 
-    private fun startTracking() {
-        if (!serverClient.isConnected()) {
+        if (!TrackingCore.isConnected()) {
             tvStatus.text = "먼저 서버에 연결하세요"
             return
         }
-        isTracking = true
-        btnStart.text = "추적 중지"
-        tvStatus.text = "📍 위치 추적 중..."
-
-        // BLE 스캔 시작 (가능한 경우)
-        if (bleScanner.isAvailable()) {
-            bleScanner.startScan()
+        // API 34+: 위치 권한 없이 location 타입 포그라운드 서비스를 시작하면
+        // SecurityException이 발생하므로 사전 확인
+        if (ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Toast.makeText(this, "위치 권한이 필요합니다", Toast.LENGTH_SHORT).show()
+            requestLocationPermission()
+            return
         }
 
-        locationManager.startLocationUpdates { lat, lng ->
-            currentLatLng = LatLng(lat, lng)
-            tvLocation.text = "위치: $lat, $lng"
-
-            googleMap.animateCamera(
-                CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), DEFAULT_ZOOM)
-            )
-
-            // 1. 고성능 배치 전송을 위해 Repository로 위임 (Non-blocking)
-            val location = android.location.Location("").apply {
-                latitude = lat
-                longitude = lng
-            }
-            locationRepository.onLocationReceived(location)
-
-            // 2. 실시간 혼잡도 UI 업데이트를 위해 1회성 조회 수행 (선택적)
-            lifecycleScope.launch {
-                val result = serverClient.getCongestion(lat, lng)
-                if (result == null && !serverClient.isConnected()) {
-                    tvStatus.text = "❌ 연결 끊김"
-                    stopTracking()
-                }
-                result?.let { updateCongestionUI(it, lat, lng) }
-            }
-        }
-    }
-
-    private fun stopTracking() {
-        isTracking = false
-        btnStart.text = "추적 시작"
-        tvStatus.text = "추적 중지됨"
-        locationManager.stopLocationUpdates()
-        bleScanner.stopScan()
+        // 포그라운드 서비스가 TrackingCore.startTracking()을 호출하고
+        // 화면이 꺼져도 수집을 유지한다
+        TrackingService.start(this)
     }
 
     private fun updateCongestionUI(data: CongestionData, lat: Double, lng: Double) {
@@ -334,6 +350,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             "혼잡도: ${data.levelKorean()} (${(data.ratio * 100).toInt()}%)"
         tvCongestion.setTextColor(data.color())
 
+        if (!::googleMap.isInitialized) return
         val position = LatLng(lat, lng)
 
         // ── 이전 추적 원/마커 제거 후 새로 그리기 (중복 방지) ────────────
@@ -387,14 +404,29 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
+    // 포그라운드 서비스 알림 표시용 (33+). 거부해도 추적은 동작하며
+    // 알림만 보이지 않는다.
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    NOTIFICATION_PERMISSION_REQUEST
+                )
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        // 메모리 해제: 원/마커 명시적 제거
         selectedCircle?.remove(); selectedCircle = null
         selectedMarker?.remove(); selectedMarker = null
         trackingCircle?.remove(); trackingCircle = null
         trackingMarker?.remove(); trackingMarker = null
-        stopTracking()
-        serverClient.disconnect()
+        TrackingCore.shutdownIfIdle()
     }
 }

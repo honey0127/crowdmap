@@ -7,6 +7,8 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -19,6 +21,16 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * - RSSI >= -70dBm 필터: 약 10m 이내 기기만 카운트
  * - 60초 슬라이딩 윈도우: 고유 MAC 주소 기준 중복 제거
+ *
+ * ── 수집 효율화 ──
+ * 1. 듀티 사이클 스캔: 30초 주기 중 8초만 라디오를 켠다. 60초 슬라이딩
+ *    윈도우가 스캔 공백을 메워주므로 고유 기기 카운트는 거의 그대로
+ *    유지되면서 라디오 점유 시간을 ~73% 줄인다. 밀도 추정은 10초 배치
+ *    주기로만 소비되므로 상시 LOW_LATENCY 스캔은 순수 낭비였다.
+ *    (Android 7+의 "30초당 스캔 시작 5회 제한"에도 안전: 30초당 1회 시작)
+ * 2. 하드웨어 오프로드 배칭: 지원 단말에서는 광고 패킷마다 앱을 깨우지
+ *    않고 BT 컨트롤러 펌웨어가 2초간 모아 onBatchScanResults로 한 번에
+ *    전달한다. 군중 밀집 지역(초당 수백 패킷)에서 콜백 횟수가 급감한다.
  */
 class BleScanner(private val context: Context) {
 
@@ -27,6 +39,11 @@ class BleScanner(private val context: Context) {
         private const val RSSI_THRESHOLD = -70
         // 60초 이내 감지된 기기만 유효 (배치 주기 10초의 6배)
         private const val WINDOW_MS = 60_000L
+        // 듀티 사이클: SCAN_CYCLE_MS 주기 중 SCAN_ACTIVE_MS 동안만 라디오 ON
+        private const val SCAN_ACTIVE_MS = 8_000L
+        private const val SCAN_CYCLE_MS = 30_000L
+        // 컨트롤러가 스캔 결과를 모아서 전달하는 간격 (오프로드 배칭 지원 시)
+        private const val REPORT_DELAY_MS = 2_000L
     }
 
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
@@ -36,7 +53,10 @@ class BleScanner(private val context: Context) {
 
     // MAC 주소 → 마지막 감지 시각 (ms)
     private val detectedDevices = ConcurrentHashMap<String, Long>()
-    private val isScanning = AtomicBoolean(false)
+    private val isScanRequested = AtomicBoolean(false)  // 외부에서 요청한 스캔 상태
+    private val isRadioOn = AtomicBoolean(false)        // 실제 라디오 동작 여부
+
+    private val handler = Handler(Looper.getMainLooper())
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -55,37 +75,70 @@ class BleScanner(private val context: Context) {
         }
     }
 
+    // ON ↔ OFF 상태를 오가며 자기 자신을 다시 스케줄링하는 듀티 사이클 루프
+    private val cycleRunnable = object : Runnable {
+        override fun run() {
+            if (!isScanRequested.get()) return
+            if (isRadioOn.get()) {
+                stopRadio()
+                handler.postDelayed(this, SCAN_CYCLE_MS - SCAN_ACTIVE_MS)
+            } else {
+                startRadio()
+                handler.postDelayed(this, SCAN_ACTIVE_MS)
+            }
+        }
+    }
+
     /**
-     * BLE 스캔을 시작합니다. 이미 실행 중이면 무시합니다.
+     * BLE 듀티 사이클 스캔을 시작합니다. 이미 실행 중이면 무시합니다.
      * BLUETOOTH_SCAN 권한이 필요합니다 (Android 12+).
      */
-    @SuppressLint("MissingPermission")
     fun startScan() {
-        val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
-        if (isScanning.getAndSet(true)) return
-
-        val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .build()
-
-        try {
-            scanner.startScan(null, settings, scanCallback)
-            println("[BleScanner] BLE 스캔 시작")
-        } catch (e: Exception) {
-            isScanning.set(false)
-            println("[BleScanner] 스캔 시작 실패: ${e.message}")
-        }
+        if (bluetoothAdapter?.bluetoothLeScanner == null) return
+        if (isScanRequested.getAndSet(true)) return
+        handler.post(cycleRunnable)
+        println("[BleScanner] BLE 듀티 사이클 스캔 시작 (${SCAN_ACTIVE_MS / 1000}s ON / ${SCAN_CYCLE_MS / 1000}s 주기)")
     }
 
     /**
      * BLE 스캔을 중지합니다.
      */
-    @SuppressLint("MissingPermission")
     fun stopScan() {
-        if (!isScanning.getAndSet(false)) return
+        if (!isScanRequested.getAndSet(false)) return
+        handler.removeCallbacks(cycleRunnable)
+        stopRadio()
+        println("[BleScanner] BLE 스캔 중지")
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startRadio() {
+        val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
+        if (isRadioOn.getAndSet(true)) return
+
+        // 듀티 사이클 + 60초 윈도우 집계 구조에서는 BALANCED로 충분하다.
+        // LOW_LATENCY는 라디오를 거의 100% 점유해 발열/배터리 부담이 크다.
+        val builder = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
+        if (bluetoothAdapter?.isOffloadedScanBatchingSupported == true) {
+            builder.setReportDelay(REPORT_DELAY_MS)
+        }
+
         try {
-            bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
-            println("[BleScanner] BLE 스캔 중지")
+            scanner.startScan(null, builder.build(), scanCallback)
+        } catch (e: Exception) {
+            isRadioOn.set(false)
+            println("[BleScanner] 스캔 시작 실패: ${e.message}")
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun stopRadio() {
+        if (!isRadioOn.getAndSet(false)) return
+        try {
+            val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
+            // 오프로드 배칭 사용 시 컨트롤러에 남아 있는 결과를 회수하고 종료
+            scanner.flushPendingScanResults(scanCallback)
+            scanner.stopScan(scanCallback)
         } catch (e: Exception) {
             println("[BleScanner] 스캔 중지 실패: ${e.message}")
         }

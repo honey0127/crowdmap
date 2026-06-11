@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -27,16 +28,15 @@
  * recv 로 들어온 바이트를 여기에 모았다가 '\n' 단위로 잘라서 한 줄씩 처리한다.
  * 덕분에 1바이트씩 recv 하던 기존 recvLine 방식의 잦은 시스템 콜이 사라진다.
  *
- * [B-1 수정] generation 카운터 추가
- * fd 는 소켓이 닫힌 뒤 OS 가 동일 번호를 재사용할 수 있다.
- * ThreadPool 태스크가 이전 연결의 fd 로 send 하는 레이스를 막기 위해
- * closeClient() 때마다 generation 을 증가시키고,
- * 태스크 실행 직전에 현재 generation 과 비교한다.
+ * lastActivity 는 유휴 연결 정리에 쓴다. 셀룰러 NAT 뒤의 단말은 FIN 없이
+ * 사라지는 경우가 많아, 이 시각 기준으로 죽은 연결을 회수하지 않으면
+ * fd 가 무한히 누적된다.
  */
 struct ClientContext {
     int         fd         = -1;
-    uint64_t    generation = 0;  // [B-1 추가] fd 재사용 감지용 카운터
-    std::string inbuf;           // 부분 수신된 줄을 모으는 per-connection 버퍼
+    uint64_t    generation = 0;
+    std::string inbuf;
+    std::chrono::steady_clock::time_point lastActivity;
 };
 
 /**
@@ -46,6 +46,14 @@ struct ClientContext {
  *  - 위치 갱신(userId != 0)은 SpatialDensityEngine 에 기록만 하고 응답하지 않는다(Silent Update).
  *  - 조회(userId == 0)는 외부 API 호출 등 블로킹이 발생할 수 있으므로
  *    ThreadPool 워커로 넘겨(offload) 리액터 스레드가 멈추지 않도록 한다.
+ *
+ * [대규모 트래픽 대응]
+ *  - 리액터 스레드에서는 이벤트 단위 로그를 남기지 않는다(디버그 모드 제외).
+ *    대신 카운터를 모아 STATS_INTERVAL_SEC 마다 통계 한 줄만 출력한다.
+ *  - SWEEP_INTERVAL_SEC 마다 IDLE_TIMEOUT_SEC 이상 무통신 연결을 정리한다.
+ *    (클라이언트 배치 주기 10~60초 + 여유분을 고려한 값)
+ *  - 워커 큐가 포화면 조회를 받지 않고 stale 캐시로 즉시 응답하거나
+ *    폐기한다(load shedding). 폭증 시 지연이 무한히 자라는 것을 막는다.
  */
 class EpollServer {
 public:
@@ -67,6 +75,17 @@ private:
     void closeClient(int fd);
     void parseLine(ClientContext& ctx, std::string_view line);
 
+    void sweepIdleClients();  // 유휴 연결 회수 (리액터 스레드에서 호출)
+    void logStats();          // 주기 통계 출력 후 구간 카운터 리셋
+
+    // 워커 스레드에서 부분 전송(EAGAIN/short write)을 처리하며 응답을 보낸다.
+    static void sendAll(int fd, const char* data, size_t len);
+
+    // 혼잡 레벨 → 클라이언트 권장 리포트 주기(초).
+    // 밀집 존일수록 개별 리포트의 정보 가치가 낮으므로(존 리포트가 대체)
+    // 주기를 늦춰 서버 유입량을 원격으로 감압한다.
+    static int intervalHintFor(CongestionLevel level);
+
     int               listen_fd_ = -1;
     int               epoll_fd_  = -1;
     uint16_t          port_;
@@ -87,7 +106,21 @@ private:
     CacheManager&         cacheManager_;
     ThreadPool&           threadPool_;
 
-    static constexpr int MAX_EVENTS = 1024;
+    // ── 운영 카운터 (리액터 스레드 전용 — 락 불필요) ──
+    uint64_t accepted_    = 0;
+    uint64_t closed_      = 0;
+    uint64_t idleClosed_  = 0;
+    uint64_t lines_       = 0;
+    uint64_t zoneReports_ = 0;
+    uint64_t queries_     = 0;
+    uint64_t shed_        = 0;
+    std::chrono::steady_clock::time_point lastStatsAt_;
+    std::chrono::steady_clock::time_point lastSweepAt_;
+
+    static constexpr int MAX_EVENTS         = 1024;
+    static constexpr int IDLE_TIMEOUT_SEC   = 90;  // 배치 3회(최대 60초 주기 고려) 미수신 시 회수
+    static constexpr int SWEEP_INTERVAL_SEC = 30;
+    static constexpr int STATS_INTERVAL_SEC = 10;
 };
 
 #endif // EPOLL_SERVER_H

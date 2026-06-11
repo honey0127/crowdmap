@@ -6,7 +6,10 @@ import com.example.crowdmap.network.ServerClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.floor
+import kotlin.random.Random
 
 /**
  * [LocationRepository]
@@ -21,6 +24,19 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 개별 좌표 배치 대신 경량 존 밀도 리포트를 전송합니다.
  * 전송 형식: "zone=<zoneId>,density=<bleCount>\n"
  * 이 한 줄이 zone 내 N대의 개별 좌표 패킷을 대체하여 서버 트래픽을 대폭 감소시킵니다.
+ *
+ * --- 대규모 동시 접속 대응 ---
+ * 1. 격자 중복 제거: 서버는 0.001도(약 100m) 격자 단위로 집계하므로 같은
+ *    격자 안의 좌표를 여러 줄 보내는 것은 정보가 0인데 밀도만 부풀린다.
+ *    배치마다 격자당 최신 fix 1줄로 압축한다. (전송량 감소 + 집계 정확도 향상)
+ * 2. 정지 사용자 heartbeat: 이동 거리 필터(10m) 때문에 멈춰 있는 사용자는
+ *    위치 콜백이 오지 않아 서버 5분 윈도우에서 증발한다. 군중 앱에서는
+ *    "멈춰 있는 사람들"이 핵심 신호이므로, 추적 중이면 배치마다 마지막
+ *    위치 한 줄로 존재를 갱신한다. (배치당 정확히 1이벤트 = 가중치도 일정)
+ * 3. 배치 지터: 모든 단말이 정확히 10초 주기로 전송하면 서버에 도착 시점이
+ *    동기화될 수 있어 ±1초 무작위 지터로 부하를 시간축에 분산한다.
+ * 4. 좌표 정밀도 절사: 소수 5자리(약 1m)면 100m 격자 집계에 충분하다.
+ *    줄당 바이트 수를 줄여 같은 대역폭으로 더 많은 단말을 수용한다.
  */
 class LocationRepository(
     private val serverClient: ServerClient,
@@ -31,6 +47,17 @@ class LocationRepository(
     companion object {
         // 이 수 이상 BLE 기기가 감지되면 밀집 지역으로 판단 → 존 리포트 전송
         private const val DENSE_ZONE_THRESHOLD = 5
+
+        private const val BATCH_INTERVAL_MS = 10_000L
+        private const val BATCH_JITTER_MS = 1_000L
+
+        // 밀집 지역(존 리포트 모드)의 최소 전송 주기. 개별 좌표 대신
+        // 존 리포트 한 줄이 집계를 대표하므로(서버 TTL 5분) 주기를 늦춰도
+        // 정확도 손실 없이 서버 유입량만 줄어든다.
+        private const val DENSE_INTERVAL_MS = 30_000L
+
+        // 서버 SpatialHash::GRID_SIZE(0.001도 ≈ 100m)와 동일한 격자 크기
+        private const val DEDUP_GRID = 0.001
     }
 
     private val locationChannel = Channel<Location>(
@@ -42,15 +69,25 @@ class LocationRepository(
     private val retryBuffer   = StringBuilder(8192)
     private val MAX_RETRY_BUFFER_SIZE = 1024 * 10
 
-    // 최신 위치 (존 리포트에 사용)
+    // 배치 내 격자 중복 제거용 (격자 키 → 해당 격자의 최신 fix)
+    private val dedupCells = LinkedHashMap<Long, Location>()
+
+    // 최신 위치 (존 리포트/heartbeat에 사용)
     @Volatile private var lastLat: Double = 0.0
     @Volatile private var lastLng: Double = 0.0
     @Volatile private var hasLocation: Boolean = false
+
+    // 추적 중 여부: 정지 사용자 heartbeat 전송 게이트
+    @Volatile private var tracking: Boolean = false
 
     private val isRunning = AtomicBoolean(false)
 
     init {
         startBatchWorker()
+    }
+
+    fun setTracking(active: Boolean) {
+        tracking = active
     }
 
     fun onLocationReceived(location: Location) {
@@ -64,8 +101,12 @@ class LocationRepository(
         if (isRunning.getAndSet(true)) return
 
         scope.launch(Dispatchers.IO) {
+            // 다음 배치까지의 대기 시간. 서버 힌트(interval=N)와 밀집 모드에
+            // 따라 매 주기 다시 계산된다.
+            var nextDelayMs = BATCH_INTERVAL_MS
+
             while (isActive) {
-                delay(10_000L)
+                delay(nextDelayMs + Random.nextLong(-BATCH_JITTER_MS, BATCH_JITTER_MS))
 
                 sendBuffer.clear()
 
@@ -75,6 +116,7 @@ class LocationRepository(
                 }
 
                 val bleCount = bleScanner?.getCount() ?: 0
+                var denseMode = false
 
                 // ── 방법 2: 밀집 지역 → 존 밀도 리포트로 대체 ──────────────────
                 // 주변 기기가 DENSE_ZONE_THRESHOLD 이상이면 개별 좌표 대신
@@ -82,6 +124,7 @@ class LocationRepository(
                 if (bleCount >= DENSE_ZONE_THRESHOLD && hasLocation) {
                     val zoneId = ZoneIdCalculator.fromCoordinate(lastLat, lastLng)
                     if (zoneId != -1) {
+                        denseMode = true
                         // 채널에 쌓인 개별 좌표는 비워버리고 (이번 배치는 존 리포트로 대체)
                         while (locationChannel.tryReceive().isSuccess) { /* drain */ }
 
@@ -91,21 +134,24 @@ class LocationRepository(
 
                         println("[LocationRepository] 밀집 지역 감지(ble=$bleCount). 존 리포트 전송: zone=$zoneId")
                     }
-                } else {
-                    // ── 방법 1: 일반/희박 지역 → BLE count 포함 개별 좌표 배치 ──
-                    var count = 0
+                }
+
+                if (!denseMode) {
+                    // ── 방법 1: 일반/희박 지역 → 격자 중복 제거 후 개별 좌표 배치 ──
+                    dedupCells.clear()
                     while (true) {
                         val loc = locationChannel.tryReceive().getOrNull() ?: break
-                        sendBuffer.append(userId)
-                            .append(",")
-                            .append(loc.latitude)
-                            .append(",")
-                            .append(loc.longitude)
-                        if (bleCount > 0) {
-                            sendBuffer.append(",ble=").append(bleCount)
-                        }
-                        sendBuffer.append("\n")
-                        count++
+                        // 같은 100m 격자 안의 좌표는 최신 fix 한 건으로 압축
+                        dedupCells[gridKey(loc.latitude, loc.longitude)] = loc
+                    }
+                    for (loc in dedupCells.values) {
+                        appendLocationLine(loc.latitude, loc.longitude, bleCount)
+                    }
+
+                    // 정지 사용자 heartbeat: 새 fix가 없어도 추적 중이면
+                    // 마지막 위치 한 줄을 보내 서버 5분 윈도우에서 살아 있게 유지
+                    if (dedupCells.isEmpty() && tracking && hasLocation) {
+                        appendLocationLine(lastLat, lastLng, bleCount)
                     }
                 }
 
@@ -122,8 +168,37 @@ class LocationRepository(
                         }
                     }
                 }
+
+                // ── 다음 주기 결정 (서버 주도 적응형 감압) ──
+                // 서버가 자기 위치 조회 응답에 실어준 권장 주기를 따른다.
+                // (혼잡 존일수록 김 → 서버가 유입량을 원격으로 조절)
+                // 밀집 모드에서는 최소 30초: 존 리포트가 집계를 대표하므로
+                // 자주 보낼 이유가 없다.
+                val hintMs = (serverClient.suggestedIntervalSec?.coerceIn(10, 60) ?: 10) * 1000L
+                nextDelayMs = if (denseMode) maxOf(hintMs, DENSE_INTERVAL_MS) else hintMs
             }
             isRunning.set(false)
         }
+    }
+
+    // 소수 5자리(≈1m)로 반올림해 직렬화: 서버 격자(약 100m) 대비 충분한
+    // 정밀도이면서 줄 길이를 30% 이상 줄인다. (Locale.US: 소수점 '.' 보장)
+    private fun appendLocationLine(lat: Double, lng: Double, bleCount: Int) {
+        sendBuffer.append(userId)
+            .append(',')
+            .append(String.format(Locale.US, "%.5f", lat))
+            .append(',')
+            .append(String.format(Locale.US, "%.5f", lng))
+        if (bleCount > 0) {
+            sendBuffer.append(",ble=").append(bleCount)
+        }
+        sendBuffer.append('\n')
+    }
+
+    // 서버 SpatialHash::generateKey와 동일한 방식의 격자 키
+    private fun gridKey(lat: Double, lng: Double): Long {
+        val latIdx = floor(lat / DEDUP_GRID).toLong()
+        val lngIdx = floor(lng / DEDUP_GRID).toLong()
+        return (latIdx shl 32) or (lngIdx and 0xFFFFFFFFL)
     }
 }
