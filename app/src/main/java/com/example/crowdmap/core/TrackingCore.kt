@@ -3,18 +3,17 @@ package com.example.crowdmap.core
 import android.content.Context
 import android.location.Location
 import com.example.crowdmap.ble.BleScanner
+import com.example.crowdmap.ble.CrowdAdvertiser
 import com.example.crowdmap.location.CrowdLocationManager
 import com.example.crowdmap.location.LocationRepository
 import com.example.crowdmap.model.CongestionData
 import com.example.crowdmap.network.ServerClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 
 /**
  * [TrackingCore]
@@ -39,16 +38,12 @@ object TrackingCore {
 
     private lateinit var serverClient: ServerClient
     private lateinit var bleScanner: BleScanner
+    private lateinit var advertiser: CrowdAdvertiser
     private lateinit var locationManager: CrowdLocationManager
     private lateinit var repository: LocationRepository
 
     @Volatile
     private var initialized = false
-
-    // 자기 위치 혼잡도 조회 잡: 최신 위치 1건만 의미가 있으므로
-    // 새 위치가 오면 이전 조회를 취소한다(conflation) — 서버가 느릴 때
-    // stale 조회가 소켓 락 앞에 줄을 서는 것을 방지.
-    private var congestionJob: Job? = null
 
     // ── UI가 구독하는 상태 ──────────────────────────────────────────
     private val _connected = MutableStateFlow(false)
@@ -71,8 +66,16 @@ object TrackingCore {
 
         serverClient    = ServerClient()
         bleScanner      = BleScanner(app)
+        advertiser      = CrowdAdvertiser(app)
         locationManager = CrowdLocationManager(app)
-        repository      = LocationRepository(serverClient, scope, loadUserId(app), bleScanner)
+        repository      = LocationRepository(serverClient, scope, loadUserId(app), bleScanner, advertiser)
+
+        // RRC 번들링: 자기 위치 혼잡도는 배치 전송과 같은 radio burst에서
+        // Repository가 조회해 이 콜백으로 전달한다 (위치 fix마다 별도 조회 제거)
+        repository.onBatchResult = { result ->
+            if (result != null) _congestion.value = result
+            _connected.value = serverClient.isConnected()
+        }
 
         initialized = true
     }
@@ -107,6 +110,11 @@ object TrackingCore {
         if (bleScanner.isAvailable()) {
             bleScanner.startScan()
         }
+        // EN방식 회전 임시 ID 광고: 주변 CrowdMap 단말이 나를 정확히
+        // 1대로 셀 수 있게 한다 (MAC 랜덤화 중복 집계 제거)
+        if (advertiser.isAvailable()) {
+            advertiser.start()
+        }
         locationManager.startLocationUpdates { lat, lng -> onLocation(lat, lng) }
     }
 
@@ -117,7 +125,7 @@ object TrackingCore {
         repository.setTracking(false)
         locationManager.stopLocationUpdates()
         bleScanner.stopScan()
-        congestionJob?.cancel()
+        advertiser.stop()
     }
 
     private fun onLocation(lat: Double, lng: Double) {
@@ -128,15 +136,8 @@ object TrackingCore {
             longitude = lng
         }
         repository.onLocationReceived(location)
-
-        // 자기 위치 혼잡도 조회 (UI 표시용) — 이전 조회는 취소하고 최신만 유지.
-        // applyIntervalHint=true: 응답의 권장 주기를 배치 전송 주기에 반영한다.
-        congestionJob?.cancel()
-        congestionJob = scope.launch {
-            val result = serverClient.getCongestion(lat, lng, applyIntervalHint = true)
-            if (result != null) _congestion.value = result
-            _connected.value = serverClient.isConnected()
-        }
+        // 자기 위치 혼잡도 조회는 여기서 하지 않는다 — Repository가 배치
+        // 전송과 같은 radio burst에 합쳐 수행한다 (onBatchResult로 수신)
     }
 
     /** 지도 탭 등 임의 지점 조회 (주기 힌트는 반영하지 않음) */
