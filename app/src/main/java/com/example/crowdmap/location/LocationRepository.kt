@@ -58,6 +58,12 @@ class LocationRepository(
         // 정확도 손실 없이 서버 유입량만 줄어든다.
         private const val DENSE_INTERVAL_MS = 30_000L
 
+        // 클러스터 헤드 선출 윈도우: 밀집 주기(30초)의 3배.
+        // 현 헤드의 광고가 3주기 동안 안 들리면 ID가 윈도우에서 빠지고
+        // 다음으로 작은 ID 단말이 자동 승계한다 (Zigbee/Thread 라우터
+        // 선출과 같은 무합의(coordination-free) 방식).
+        private const val HEAD_ELECTION_WINDOW_MS = 90_000L
+
         // 서버 SpatialHash::GRID_SIZE(0.001도 ≈ 100m)와 동일한 격자 크기
         private const val DEDUP_GRID = 0.001
     }
@@ -130,11 +136,25 @@ class LocationRepository(
                         // 채널에 쌓인 개별 좌표는 비워버리고 (이번 배치는 존 리포트로 대체)
                         while (locationChannel.tryReceive().isSuccess) { /* drain */ }
 
-                        sendBuffer.append("zone=").append(zoneId)
-                            .append(",density=").append(bleCount)
-                            .append("\n")
+                        // ── 클러스터 헤드 선출 ──────────────────────────────
+                        // 같은 존의 단말들이 각자 리포트하면 N대가 N줄을 보낸다.
+                        // 센서 메시 표준대로 "광고 ID 사전순 최소" 단말 1대만
+                        // 송신하고 나머지는 침묵 → 존당 업스트림이 정확히 1로
+                        // 수렴한다. ID는 고정 길이 hex라 사전순 == 숫자 비교.
+                        // 내 광고가 꺼져 있으면(권한 거부 등) 선출 불참 → 송신.
+                        val myId = advertiser?.currentIdHex()
+                        val heardIds = bleScanner?.getActiveAppIds(HEAD_ELECTION_WINDOW_MS)
+                            ?: emptyList()
+                        val isClusterHead = myId == null || heardIds.none { it < myId }
 
-                        println("[LocationRepository] 밀집 지역 감지(ble=$bleCount). 존 리포트 전송: zone=$zoneId")
+                        if (isClusterHead) {
+                            sendBuffer.append("zone=").append(zoneId)
+                                .append(",density=").append(bleCount)
+                                .append("\n")
+                            println("[LocationRepository] 밀집 지역 감지(ble=$bleCount). 클러스터 헤드로 존 리포트 전송: zone=$zoneId")
+                        } else {
+                            println("[LocationRepository] 밀집 지역 — 더 작은 ID의 헤드 존재. 존 리포트 침묵 (들리는 앱 단말 ${heardIds.size}대)")
+                        }
                     }
                 }
 
