@@ -40,6 +40,13 @@ class CrowdAdvertiser(private val context: Context) {
         private const val ROTATION_MS = 15 * 60_000L
 
         const val ID_LENGTH = 4
+
+        // 조난(distress) 페이로드: [4B 임시 ID][4B zoneId BE][1B density]
+        // Apple Find My의 store-and-forward와 같은 원리 — 서버 업로드가
+        // 막힌 단말이 관측치를 광고에 실으면, 연결이 성한 이웃 단말이
+        // 자기 배치에 합쳐 대신 업로드한다. 페이로드 길이로 일반/조난을
+        // 구분한다 (4B = 일반, 9B = 조난).
+        const val DISTRESS_LENGTH = ID_LENGTH + 5
     }
 
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
@@ -53,6 +60,10 @@ class CrowdAdvertiser(private val context: Context) {
 
     @Volatile
     private var ephemeralId: ByteArray = newId()
+
+    // 조난 관측치 (zoneId, density). null이면 일반 광고.
+    @Volatile
+    private var distress: Pair<Int, Int>? = null
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartFailure(errorCode: Int) {
@@ -81,7 +92,28 @@ class CrowdAdvertiser(private val context: Context) {
         if (!isAdvertising.getAndSet(false)) return
         handler.removeCallbacks(rotateRunnable)
         stopAdvertising()
+        distress = null
         println("[CrowdAdvertiser] 광고 중지")
+    }
+
+    /**
+     * 서버 업로드가 막힌 동안 내 존 관측치를 광고에 실어 이웃에 위탁한다.
+     * 같은 값이면 광고 재시작을 생략한다 (반복 호출 안전).
+     */
+    fun setDistress(zoneId: Int, density: Int) {
+        val next = zoneId to density.coerceIn(1, 255)
+        if (distress == next) return
+        distress = next
+        if (isAdvertising.get()) restartAdvertising()
+        println("[CrowdAdvertiser] 조난 광고 시작: zone=$zoneId density=${next.second}")
+    }
+
+    /** 업로드가 복구되면 일반 광고로 복귀한다. */
+    fun clearDistress() {
+        if (distress == null) return
+        distress = null
+        if (isAdvertising.get()) restartAdvertising()
+        println("[CrowdAdvertiser] 조난 광고 해제 (업로드 복구)")
     }
 
     /** 현재 광고 중인 내 임시 ID (소문자 hex 8자). 광고 꺼져 있으면 null. */
@@ -129,8 +161,19 @@ class CrowdAdvertiser(private val context: Context) {
         }
     }
 
-    /** 광고 페이로드: [4B 임시 ID] */
-    private fun buildPayload(): ByteArray = ephemeralId.copyOf()
+    /** 광고 페이로드: [4B 임시 ID] 또는 조난 시 [4B ID][4B zoneId][1B density] */
+    private fun buildPayload(): ByteArray {
+        val d = distress ?: return ephemeralId.copyOf()
+        val (zoneId, density) = d
+        val out = ByteArray(DISTRESS_LENGTH)
+        System.arraycopy(ephemeralId, 0, out, 0, ID_LENGTH)
+        out[ID_LENGTH]     = (zoneId ushr 24).toByte()
+        out[ID_LENGTH + 1] = (zoneId ushr 16).toByte()
+        out[ID_LENGTH + 2] = (zoneId ushr 8).toByte()
+        out[ID_LENGTH + 3] = zoneId.toByte()
+        out[ID_LENGTH + 4] = density.toByte()
+        return out
+    }
 
     fun isAvailable(): Boolean =
         bluetoothAdapter?.isEnabled == true && bluetoothAdapter?.bluetoothLeAdvertiser != null

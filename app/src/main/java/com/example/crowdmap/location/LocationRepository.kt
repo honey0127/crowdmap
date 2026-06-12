@@ -65,6 +65,13 @@ class LocationRepository(
         // 선출과 같은 무합의(coordination-free) 방식).
         private const val HEAD_ELECTION_WINDOW_MS = 90_000L
 
+        // ── Find My식 기회적 릴레이 ──
+        // 이 횟수 이상 연속 전송 실패 시 내 관측치를 광고에 실어 이웃에 위탁
+        private const val DISTRESS_AFTER_FAILURES = 2
+        // 위탁 관측치의 유효 나이 / 배치당 릴레이 줄 수 상한
+        private const val RELAY_MAX_AGE_MS = 60_000L
+        private const val RELAY_MAX_LINES = 5
+
         // 서버 SpatialHash::GRID_SIZE(0.001도 ≈ 100m)와 동일한 격자 크기
         private const val DEDUP_GRID = 0.001
     }
@@ -96,6 +103,9 @@ class LocationRepository(
     // 라디오가 이미 깨어 있는 같은 burst에 합쳐 수행하고 결과를 이 콜백으로
     // 전달한다. 송신량은 같고 라디오 웨이크업 횟수만 줄어든다.
     @Volatile var onBatchResult: ((CongestionData?) -> Unit)? = null
+
+    // 연속 전송 실패 수 (배치 워커 코루틴 전용)
+    private var consecutiveSendFailures = 0
 
     private val isRunning = AtomicBoolean(false)
 
@@ -186,6 +196,22 @@ class LocationRepository(
                     }
                 }
 
+                // ── Find My식 릴레이: 이웃 조난 단말의 관측치를 내 배치에 합승 ──
+                // 망 포화로 직접 업로드가 막힌 단말의 존 리포트를, 연결이 성한
+                // 내가 대신 올린다. 직접 들은 광고만 릴레이하므로(1-hop) 루프 없음.
+                val relays = bleScanner?.takeRelayObservations(RELAY_MAX_AGE_MS) ?: emptyList()
+                var relayed = 0
+                for ((zone, density) in relays) {
+                    if (relayed >= RELAY_MAX_LINES) break
+                    sendBuffer.append("zone=").append(zone)
+                        .append(",density=").append(density)
+                        .append("\n")
+                    relayed++
+                }
+                if (relayed > 0) {
+                    println("[LocationRepository] 이웃 조난 관측 ${relayed}건 릴레이 합승")
+                }
+
                 var sentOk = true
                 if (sendBuffer.isNotEmpty()) {
                     val rawData = sendBuffer.toString()
@@ -199,6 +225,26 @@ class LocationRepository(
                             println("[LocationRepository] 재시도 버퍼 용량 초과. 일부 데이터를 폐기합니다.")
                         }
                     }
+                }
+
+                // ── 조난 광고 전환 (store-and-forward 위탁) ──
+                // 연속 실패가 쌓이면(셀룰러 RAN 포화 등) 내 존 관측치를 BLE
+                // 광고에 실어 이웃이 대신 업로드하게 한다. 망이 포화될수록
+                // 주변에 연결 성한 단말이 있을 확률은 높아지므로, 포화
+                // 지역일수록 데이터가 더 잘 모이는 역설적 강건성이 생긴다.
+                if (!sentOk) {
+                    consecutiveSendFailures++
+                    if (consecutiveSendFailures >= DISTRESS_AFTER_FAILURES &&
+                        tracking && hasLocation
+                    ) {
+                        val myZone = ZoneIdCalculator.fromCoordinate(lastLat, lastLng)
+                        if (myZone != -1) {
+                            advertiser?.setDistress(myZone, maxOf(bleCount, 1))
+                        }
+                    }
+                } else {
+                    consecutiveSendFailures = 0
+                    advertiser?.clearDistress()
                 }
 
                 // ── RRC 번들링: 배치 송신으로 라디오가 깨어 있는 지금,

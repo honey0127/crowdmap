@@ -59,6 +59,9 @@ class BleScanner(private val context: Context) {
     private val detectedDevices = ConcurrentHashMap<String, Long>()
     // CrowdMap 앱 단말의 광고 임시 ID(hex) → 마지막 감지 시각 (클러스터 헤드 선출용)
     private val appDeviceIds = ConcurrentHashMap<String, Long>()
+    // 이웃 조난 단말의 위탁 관측치: zoneId → (density, 감지 시각)
+    // 같은 존은 최신 관측으로 덮어쓴다 (서버도 존 리포트를 덮어쓰기로 집계)
+    private val relayObservations = ConcurrentHashMap<Int, Pair<Int, Long>>()
     private val isScanRequested = AtomicBoolean(false)  // 외부에서 요청한 스캔 상태
     private val isRadioOn = AtomicBoolean(false)        // 실제 라디오 동작 여부
 
@@ -91,9 +94,40 @@ class BleScanner(private val context: Context) {
             }.toString()
             detectedDevices["id:$idHex"] = now
             appDeviceIds[idHex] = now
+
+            // 조난 페이로드(9B): 업로드가 막힌 이웃의 존 관측치 — 위탁 수신
+            if (serviceData.size >= CrowdAdvertiser.DISTRESS_LENGTH) {
+                val base = CrowdAdvertiser.ID_LENGTH
+                val zoneId = ((serviceData[base].toInt() and 0xFF) shl 24) or
+                             ((serviceData[base + 1].toInt() and 0xFF) shl 16) or
+                             ((serviceData[base + 2].toInt() and 0xFF) shl 8) or
+                             (serviceData[base + 3].toInt() and 0xFF)
+                val density = serviceData[base + 4].toInt() and 0xFF
+                if (zoneId >= 0 && density > 0) {
+                    relayObservations[zoneId] = density to now
+                }
+            }
         } else {
             detectedDevices["mac:${result.device.address}"] = now
         }
+    }
+
+    /**
+     * 이웃 조난 단말로부터 위탁받은 존 관측치를 회수(consume)합니다.
+     * 회수된 항목은 비워져 같은 관측이 매 배치 중복 송신되지 않는다.
+     * (조난 단말이 계속 광고 중이면 다음 스캔에서 다시 채워진다 —
+     *  서버 존 리포트 TTL 5분 내 주기적 갱신 효과)
+     */
+    fun takeRelayObservations(maxAgeMs: Long): List<Pair<Int, Int>> {
+        val cutoff = System.currentTimeMillis() - maxAgeMs
+        val out = ArrayList<Pair<Int, Int>>()
+        val it = relayObservations.entries.iterator()
+        while (it.hasNext()) {
+            val e = it.next()
+            if (e.value.second >= cutoff) out.add(e.key to e.value.first)
+            it.remove()
+        }
+        return out
     }
 
     // ON ↔ OFF 상태를 오가며 자기 자신을 다시 스케줄링하는 듀티 사이클 루프
