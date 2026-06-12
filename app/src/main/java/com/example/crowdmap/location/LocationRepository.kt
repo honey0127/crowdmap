@@ -10,7 +10,11 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
 import kotlin.math.floor
+import kotlin.math.ln
+import kotlin.math.roundToInt
+import kotlin.math.sign
 import kotlin.random.Random
 
 /**
@@ -71,6 +75,13 @@ class LocationRepository(
         // 위탁 관측치의 유효 나이 / 배치당 릴레이 줄 수 상한
         private const val RELAY_MAX_AGE_MS = 60_000L
         private const val RELAY_MAX_LINES = 5
+
+        // ── 로컬 차등 프라이버시(LDP) ──
+        // Apple이 이모지/QuickType 통계에 실사용하는 방식: 단말이 송신 전에
+        // 노이즈를 더해 개별 값으로는 단말 주변 환경을 특정할 수 없게 하고,
+        // 서버는 다수 표본 집계에서 노이즈가 상쇄된 값을 복원한다.
+        // ε=1.0 → Laplace(b=1/ε), 표준편차 약 ±1.4 기기.
+        private const val LDP_EPSILON = 1.0
 
         // 서버 SpatialHash::GRID_SIZE(0.001도 ≈ 100m)와 동일한 격자 크기
         private const val DEDUP_GRID = 0.001
@@ -143,6 +154,10 @@ class LocationRepository(
                 }
 
                 val bleCount = bleScanner?.getCount() ?: 0
+                // 서버로 나가는 모든 BLE 관측값은 LDP 노이즈를 거친다.
+                // 밀집 판정(DENSE_ZONE_THRESHOLD)은 전송되지 않는 로컬 판단이라
+                // 원본 값을 사용 — 노이즈로 모드가 떨리는 것을 방지.
+                val noisyBle = if (bleCount > 0) ldpNoise(bleCount) else 0
                 var denseMode = false
 
                 // ── 방법 2: 밀집 지역 → 존 밀도 리포트로 대체 ──────────────────
@@ -167,8 +182,9 @@ class LocationRepository(
                         val isClusterHead = myId == null || heardIds.none { it < myId }
 
                         if (isClusterHead) {
+                            // density=0이면 서버가 버리므로 최소 1 보장
                             sendBuffer.append("zone=").append(zoneId)
-                                .append(",density=").append(bleCount)
+                                .append(",density=").append(noisyBle.coerceAtLeast(1))
                                 .append("\n")
                             println("[LocationRepository] 밀집 지역 감지(ble=$bleCount). 클러스터 헤드로 존 리포트 전송: zone=$zoneId")
                         } else {
@@ -186,13 +202,13 @@ class LocationRepository(
                         dedupCells[gridKey(loc.latitude, loc.longitude)] = loc
                     }
                     for (loc in dedupCells.values) {
-                        appendLocationLine(loc.latitude, loc.longitude, bleCount)
+                        appendLocationLine(loc.latitude, loc.longitude, noisyBle)
                     }
 
                     // 정지 사용자 heartbeat: 새 fix가 없어도 추적 중이면
                     // 마지막 위치 한 줄을 보내 서버 5분 윈도우에서 살아 있게 유지
                     if (dedupCells.isEmpty() && tracking && hasLocation) {
-                        appendLocationLine(lastLat, lastLng, bleCount)
+                        appendLocationLine(lastLat, lastLng, noisyBle)
                     }
                 }
 
@@ -239,7 +255,8 @@ class LocationRepository(
                     ) {
                         val myZone = ZoneIdCalculator.fromCoordinate(lastLat, lastLng)
                         if (myZone != -1) {
-                            advertiser?.setDistress(myZone, maxOf(bleCount, 1))
+                            // 위탁 관측치도 원점에서 1회만 노이즈 적용 (릴레이는 그대로 전달)
+                            advertiser?.setDistress(myZone, maxOf(noisyBle, 1))
                         }
                     }
                 } else {
@@ -282,6 +299,20 @@ class LocationRepository(
             sendBuffer.append(",ble=").append(bleCount)
         }
         sendBuffer.append('\n')
+    }
+
+    // Laplace(0, 1/ε) 노이즈를 더한 값 (음수는 0 클램프).
+    // 개별 송신값은 ±수 기기 수준으로 흐려져 "이 단말 주변에 정확히
+    // 몇 대가 있었나"를 서버가 복원할 수 없고, 존 단위 집계는 표본이
+    // 모이며 노이즈가 상쇄된다. 수집 단계부터 프라이버시가 보장되는
+    // 구조(privacy at collection).
+    // 참고: 현 서버 BLE 보정은 max 기반이라 평균 기반 대비 +1~2의
+    // 상향 편향이 생기지만 혼잡 레벨 구간 폭 대비 무시 가능한 수준.
+    private fun ldpNoise(value: Int): Int {
+        val u = Random.nextDouble() - 0.5
+        val safe = (1.0 - 2.0 * abs(u)).coerceAtLeast(1e-12)  // ln(0) 방지
+        val noise = -(1.0 / LDP_EPSILON) * sign(u) * ln(safe)
+        return (value + noise).roundToInt().coerceAtLeast(0)
     }
 
     // 서버 SpatialHash::generateKey와 동일한 방식의 격자 키
