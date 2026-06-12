@@ -56,9 +56,7 @@ EpollServer::EpollServer(uint16_t              port,
 }
 
 EpollServer::~EpollServer() {
-    for (auto& [fd, ctx] : clients_) {
-        close(fd);
-    }
+    for (auto& [fd, ctx] : clients_) close(fd);
     if (epoll_fd_  >= 0) close(epoll_fd_);
     if (listen_fd_ >= 0) close(listen_fd_);
 }
@@ -69,16 +67,13 @@ void EpollServer::setNonBlocking(int fd) {
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-void EpollServer::stop() {
-    running_ = false;
-}
+void EpollServer::stop() { running_ = false; }
 
 void EpollServer::run() {
     running_ = true;
     std::vector<epoll_event> events(MAX_EVENTS);
 
     while (running_) {
-        // timeout 1000ms → stop() 신호와 주기 작업(통계/유휴 정리)을 최대 1초 안에 처리
         int n = epoll_wait(epoll_fd_, events.data(), MAX_EVENTS, 1000);
         if (n < 0) {
             if (errno == EINTR) continue;
@@ -87,8 +82,8 @@ void EpollServer::run() {
         }
 
         for (int i = 0; i < n; ++i) {
-            const int      fd       = events[i].data.fd;
-            const uint32_t evflags  = events[i].events;
+            const int      fd      = events[i].data.fd;
+            const uint32_t evflags = events[i].events;
 
             if (fd == listen_fd_) {
                 handleAccept();
@@ -114,14 +109,13 @@ void EpollServer::run() {
 }
 
 void EpollServer::handleAccept() {
-    // 논블로킹 listen 소켓이므로 EAGAIN 까지 모든 대기 연결을 수락
     while (true) {
         sockaddr_in caddr{};
         socklen_t   clen = sizeof(caddr);
         int cfd = accept(listen_fd_, reinterpret_cast<sockaddr*>(&caddr), &clen);
 
         if (cfd < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) break;  // 모두 수락 완료
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
             if (errno == EINTR) continue;
             Log::err("[EpollServer] accept 실패");
             break;
@@ -140,9 +134,8 @@ void EpollServer::handleAccept() {
         auto& ctx = clients_[cfd];
         ctx.fd           = cfd;
         ctx.lastActivity = std::chrono::steady_clock::now();
+        generations_[cfd].store(0);
         ++accepted_;
-        // 연결 단위 로그는 핫패스 — 폭증 시 리액터가 터미널 I/O에 직렬화되므로
-        // 디버그 모드에서만 출력하고 평시에는 주기 통계로 대체한다.
         Log::debug("[EpollServer] client connected fd=" + std::to_string(cfd));
     }
 }
@@ -150,6 +143,11 @@ void EpollServer::handleAccept() {
 void EpollServer::closeClient(int fd) {
     epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
     close(fd);
+
+    // [B-1] fd 닫을 때 generation 증가
+    // → ThreadPool 태스크가 이전 연결의 fd 로 send 하는 레이스 방지
+    if (generations_.count(fd)) generations_[fd].fetch_add(1);
+
     clients_.erase(fd);
     ++closed_;
     Log::debug("[EpollServer] client disconnected fd=" + std::to_string(fd));
@@ -196,9 +194,7 @@ void EpollServer::handleRead(ClientContext& ctx) {
     const int fd = ctx.fd;
     ctx.lastActivity = std::chrono::steady_clock::now();
 
-    // 논블로킹 소켓이므로 EAGAIN 까지 가능한 만큼 읽는다(레벨 트리거).
     while (true) {
-        // MemoryPool 에서 8KB 청크를 빌려 커널 → 유저 공간 수신 버퍼로 사용
         void*   chunk = pool_.allocate();
         ssize_t got   = recv(fd, chunk, MemoryPool::CHUNK_SIZE, 0);
 
@@ -206,24 +202,34 @@ void EpollServer::handleRead(ClientContext& ctx) {
             ctx.inbuf.append(static_cast<char*>(chunk), static_cast<size_t>(got));
             pool_.deallocate(chunk);
 
-            // 버퍼에서 '\n' 단위로 완성된 줄을 모두 추출
+            // [B-2] inbuf 64KB 상한 — DoS 방지
+            if (ctx.inbuf.size() > 65536) {
+                Log::warn("[EpollServer] inbuf overflow fd=" + std::to_string(fd)
+                          + " size=" + std::to_string(ctx.inbuf.size()) + " → 연결 종료");
+                closeClient(fd);
+                return;
+            }
+
+            // [B-7] 파싱 루프 32줄 상한 — 리액터 독점 방지
             size_t pos;
-            while ((pos = ctx.inbuf.find('\n')) != std::string::npos) {
+            size_t parsedLines = 0;
+            while (parsedLines < 32 &&
+                   (pos = ctx.inbuf.find('\n')) != std::string::npos) {
                 size_t len = pos;
-                if (len > 0 && ctx.inbuf[len - 1] == '\r') --len;  // CRLF 보정
+                if (len > 0 && ctx.inbuf[len - 1] == '\r') --len;
                 parseLine(ctx, std::string_view(ctx.inbuf.data(), len));
                 ctx.inbuf.erase(0, pos + 1);
+                ++parsedLines;
             }
-            // got < CHUNK_SIZE 여도 곧장 종료하지 않고 한 번 더 recv → EAGAIN 으로 확실히 비움
         } else if (got == 0) {
             pool_.deallocate(chunk);
-            closeClient(fd);   // 정상 종료(상대가 FIN)
+            closeClient(fd);
             return;
-        } else { // got < 0
+        } else {
             pool_.deallocate(chunk);
-            if (errno == EAGAIN || errno == EWOULDBLOCK) return;  // 더 읽을 것 없음
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
             if (errno == EINTR) continue;
-            closeClient(fd);   // 실제 오류
+            closeClient(fd);
             return;
         }
     }
@@ -269,8 +275,6 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
     ++lines_;
 
     // ── [Zone Density Report] P2P 집계 메시지: "zone=<id>,density=<N>" ──
-    // 기기들이 Nearby Connections 없이도 BLE 카운트를 존 단위로 집계해 전송한다.
-    // 서버 커넥션 수를 1/N으로 줄이는 핵심 경량 포맷.
     constexpr std::string_view ZONE_PREFIX = "zone=";
     if (line.substr(0, ZONE_PREFIX.size()) == ZONE_PREFIX) {
         size_t dComma = line.find(',', ZONE_PREFIX.size());
@@ -303,8 +307,6 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
     std::string_view user_id_sv = line.substr(0, comma1);
     std::string_view lat_sv     = line.substr(comma1 + 1, comma2 - comma1 - 1);
 
-    // 세 번째 필드 이후에 선택적 BLE 필드가 올 수 있음
-    // 형식: "userId,lat,lon" 또는 "userId,lat,lon,ble=N"
     size_t comma3 = line.find(',', comma2 + 1);
     std::string_view lon_sv = (comma3 == std::string_view::npos)
                               ? line.substr(comma2 + 1)
@@ -318,7 +320,6 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
     lat = std::atof(std::string(lat_sv).c_str());
     lon = std::atof(std::string(lon_sv).c_str());
 
-    // "ble=N" 필드 파싱 (존재하는 경우)
     if (comma3 != std::string_view::npos) {
         std::string_view ble_sv = line.substr(comma3 + 1);
         constexpr std::string_view BLE_PREFIX = "ble=";
@@ -328,7 +329,7 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
         }
     }
 
-    // ── [Update] 위치 갱신: 밀도 엔진에 기록만, 응답 없음(Silent Update) ──
+    // ── [Update] Silent Update ──
     if (userId != 0) {
         densityEngine_.recordLocation(userId, lat, lon, bleCount);
         return;
@@ -338,19 +339,12 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
     ++queries_;
     const int zoneId = zoneMapper_.coordinateToZoneId(lat, lon);
 
-    // [fd 재사용 레이스 방지] 워커가 응답을 보내기 전에 이 클라이언트가 끊기면
-    // 리액터가 fd 를 닫고, 새 accept 가 같은 번호를 재사용할 수 있다.
-    // 그 상태에서 워커가 원래 fd 번호로 send 하면 응답이 "엉뚱한 클라이언트"에게 간다.
-    // dup() 은 리액터 스레드에서(=closeClient 와 경합 없이) 호출되므로 안전하고,
-    // 복제된 디스크립터는 원본이 닫혀도 기존 소켓을 계속 가리킨다.
     const int dupfd = dup(ctx.fd);
     if (dupfd < 0) {
         ++shed_;
-        return;  // fd 고갈: 조회 폐기 (클라이언트 타임아웃이 처리)
+        return;
     }
 
-    // this 가 아니라 의존 컴포넌트들을 포인터로 캡처한다.
-    // (리액터/서버 객체보다 이 컴포넌트들이 더 오래 살아남도록 main 에서 수명을 보장)
     SpatialDensityEngine* engine  = &densityEngine_;
     CongestionRouter*     router  = &congestionRouter_;
     CacheManager*         cache   = &cacheManager_;
@@ -361,11 +355,7 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
         if (zoneId == -1) {
             response = "RELAXED|0.0|interval=10\n";
         } else {
-            // 클릭 지점 주변 3x3 그리드의 실시간 밀도(GPS + BLE 보정 포함)
             size_t localDensity = engine->getDensity(lat, lon);
-
-            // P2P 집계 리포트가 있으면 GPS 밀도와 비교해 더 큰 값을 사용
-            // (dense zone에서 GPS 카운트가 과소 추정될 때 zone report로 보정)
             int zoneReport = engine->getZoneReport(zoneId);
             size_t effectiveDensity = (zoneReport > 0)
                 ? std::max(localDensity, static_cast<size_t>(zoneReport))

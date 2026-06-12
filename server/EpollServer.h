@@ -33,8 +33,9 @@
  * fd 가 무한히 누적된다.
  */
 struct ClientContext {
-    int         fd = -1;
-    std::string inbuf;   // 부분 수신된 줄을 모으는 per-connection 버퍼
+    int         fd         = -1;
+    uint64_t    generation = 0;
+    std::string inbuf;
     std::chrono::steady_clock::time_point lastActivity;
 };
 
@@ -92,6 +93,11 @@ private:
 
     MemoryPool                             pool_;     // zero-copy 수신 스크래치 버퍼 풀
     std::unordered_map<int, ClientContext> clients_;  // fd → 컨텍스트 (리액터 스레드 전용)
+
+    // [B-1 추가] fd 별 generation 을 atomic 으로 별도 관리
+    // clients_ 는 리액터 스레드 전용이지만 generation 은 ThreadPool 태스크에서도 읽으므로
+    // atomic unordered_map 으로 분리하여 락 없이 안전하게 접근한다.
+    std::unordered_map<int, std::atomic<uint64_t>> generations_;
 
     // 비즈니스 로직 컴포넌트 참조
     SpatialDensityEngine& densityEngine_;

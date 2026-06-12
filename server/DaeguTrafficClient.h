@@ -187,8 +187,8 @@ private:
             curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
-            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); // 리다이렉트 허용
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 2L);        // 클라이언트 타임아웃(10s)보다 충분히 짧게
+            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_perform(curl);
             curl_easy_cleanup(curl);
         }

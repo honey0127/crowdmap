@@ -18,26 +18,16 @@ class ServerClient {
 
     companion object {
         //val SERVER_IP: String = BuildConfig.SERVER_IP
-        val SERVER_IP : String = "172.20.127.154"
+        //val SERVER_IP : String = "172.20.127.154"
+        val SERVER_IP : String = "172.20.127.234"
 
-        const val SERVER_PORT = 8765
+        const val SERVER_PORT = 5001
         const val CONNECT_TIMEOUT_MS = 5000
-
-        // 조회 응답 대기 상한. socketLock이 왕복 시간만큼 잡히므로
-        // (그동안 배치 전송이 대기) 너무 길면 폭증 시 지연이 연쇄된다.
-        // 서버는 캐시/stale로 수십 ms 안에 응답하는 것이 정상 경로.
         const val READ_TIMEOUT_MS = 3000
 
-        // ── 자동 재연결 백오프 ──
-        // 서버 재시작 시 수천 대의 단말이 같은 순간 재접속을 시도하면
-        // (reconnect storm) accept 큐가 터진다. 지수 백오프 + 무작위 지터로
-        // 재접속 시도를 시간축에 분산시킨다.
         private const val RECONNECT_BASE_MS = 1_000L
         private const val RECONNECT_MAX_MS = 30_000L
 
-        // ── 클라이언트 측 조회 캐시 TTL ──
-        // 서버 CacheManager TTL(30초)의 절반. 같은 1km 존을 짧은 간격으로
-        // 다시 조회하면 네트워크 왕복 없이 즉시 응답해 서버 조회 QPS를 줄인다.
         private const val QUERY_CACHE_TTL_MS = 15_000L
     }
 

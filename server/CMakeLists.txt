@@ -43,6 +43,10 @@ if(NOT nlohmann_json_FOUND)
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
+# hiredis (Redis C 클라이언트)
+find_library(HIREDIS_LIB hiredis REQUIRED)
+find_path(HIREDIS_INCLUDE hiredis/hiredis.h REQUIRED)
+
 # epoll 기반 서버는 Linux 전용이다.
 #   (EpollServer 가 <sys/epoll.h> 를 사용 → Windows 빌드는 지원하지 않음)
 if(WIN32)
@@ -50,5 +54,7 @@ if(WIN32)
             "이 서버는 epoll 기반이라 Linux 에서만 빌드/실행됩니다. (Windows 미지원)")
 else()
     target_link_libraries(crowdmap_server
-            pthread CURL::libcurl nlohmann_json::nlohmann_json)
+            pthread CURL::libcurl nlohmann_json::nlohmann_json ${HIREDIS_LIB})
 endif()
+
+target_include_directories(crowdmap_server PRIVATE ${HIREDIS_INCLUDE})

@@ -8,7 +8,8 @@
       "PowerShell(tasklist *)",
       "PowerShell(netstat *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\" -Recurse -Directory)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\\\\app\" -Recurse -Filter \"*.kt\" -File)"
     ]
   }
 }
