@@ -3,6 +3,7 @@ package com.example.crowdmap.location
 import android.location.Location
 import com.example.crowdmap.ble.BleScanner
 import com.example.crowdmap.ble.CrowdAdvertiser
+import com.example.crowdmap.model.CongestionData
 import com.example.crowdmap.network.ServerClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
@@ -87,6 +88,14 @@ class LocationRepository(
 
     // 추적 중 여부: 정지 사용자 heartbeat 전송 게이트
     @Volatile private var tracking: Boolean = false
+
+    // ── RRC(셀룰러 라디오) 번들링 결과 콜백 ──
+    // 셀룰러 라디오는 송신 후 ~10초 고전력 tail을 유지하므로, 작은 패킷을
+    // 띄엄띄엄 보내면 tail만 누적된다(Android 공식 'bundled transfers' 가이드).
+    // 자기 위치 혼잡도 조회를 위치 fix마다 따로 하지 않고, 배치 전송 직후
+    // 라디오가 이미 깨어 있는 같은 burst에 합쳐 수행하고 결과를 이 콜백으로
+    // 전달한다. 송신량은 같고 라디오 웨이크업 횟수만 줄어든다.
+    @Volatile var onBatchResult: ((CongestionData?) -> Unit)? = null
 
     private val isRunning = AtomicBoolean(false)
 
@@ -177,11 +186,12 @@ class LocationRepository(
                     }
                 }
 
+                var sentOk = true
                 if (sendBuffer.isNotEmpty()) {
                     val rawData = sendBuffer.toString()
-                    val success = serverClient.sendBatchRaw(rawData)
+                    sentOk = serverClient.sendBatchRaw(rawData)
 
-                    if (!success) {
+                    if (!sentOk) {
                         if (retryBuffer.length + rawData.length < MAX_RETRY_BUFFER_SIZE) {
                             retryBuffer.append(rawData)
                             println("[LocationRepository] 전송 실패. 재시도 버퍼에 보존합니다. (현재: ${retryBuffer.length} bytes)")
@@ -189,6 +199,17 @@ class LocationRepository(
                             println("[LocationRepository] 재시도 버퍼 용량 초과. 일부 데이터를 폐기합니다.")
                         }
                     }
+                }
+
+                // ── RRC 번들링: 배치 송신으로 라디오가 깨어 있는 지금,
+                //    같은 burst에 자기 위치 혼잡도 조회를 합친다 ──
+                // 전송이 실패했으면(연결 문제) 조회도 건너뛴다 — 백오프가 처리.
+                // 이 조회가 서버의 interval 힌트도 함께 실어온다.
+                if (tracking && hasLocation && sentOk) {
+                    val result = serverClient.getCongestion(
+                        lastLat, lastLng, applyIntervalHint = true
+                    )
+                    onBatchResult?.invoke(result)
                 }
 
                 // ── 다음 주기 결정 (서버 주도 적응형 감압) ──
