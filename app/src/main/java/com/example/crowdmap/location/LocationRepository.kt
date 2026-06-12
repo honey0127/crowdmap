@@ -76,6 +76,16 @@ class LocationRepository(
         private const val RELAY_MAX_AGE_MS = 60_000L
         private const val RELAY_MAX_LINES = 5
 
+        // ── 장기 체류(Visit) 감지 감압 ──
+        // Google Sleep API / Apple Visit Monitoring과 같은 발상: "이 장소에
+        // 머무르는 중"이 확실해지면 신호 빈도를 더 낮춰도 정보 손실이 없다.
+        // 같은 100m 격자에 30분 이상 머문 단말은 heartbeat 주기를 60초로
+        // 강하한다. 서버 밀도는 5분 윈도우 집계라 60초 heartbeat로도
+        // 사용자가 계속 카운트되며, 서버 유휴 정리(90초)보다 짧아 연결도
+        // 유지된다.
+        private const val DWELL_THRESHOLD_MS = 30 * 60_000L
+        private const val DWELL_INTERVAL_MS = 60_000L
+
         // ── 로컬 차등 프라이버시(LDP) ──
         // Apple이 이모지/QuickType 통계에 실사용하는 방식: 단말이 송신 전에
         // 노이즈를 더해 개별 값으로는 단말 주변 환경을 특정할 수 없게 하고,
@@ -107,6 +117,12 @@ class LocationRepository(
     // 추적 중 여부: 정지 사용자 heartbeat 전송 게이트
     @Volatile private var tracking: Boolean = false
 
+    // 장기 체류 감지: 현재 머무는 100m 격자와 그 격자에 들어온 시각.
+    // 격자가 바뀌면 리셋된다. (정지 사용자는 이동 필터 때문에 fix가 안
+    // 와서 격자가 안 바뀌므로 체류 시간이 자연히 누적된다)
+    @Volatile private var dwellCellKey: Long = Long.MIN_VALUE
+    @Volatile private var dwellStartMs: Long = 0L
+
     // ── RRC(셀룰러 라디오) 번들링 결과 콜백 ──
     // 셀룰러 라디오는 송신 후 ~10초 고전력 tail을 유지하므로, 작은 패킷을
     // 띄엄띄엄 보내면 tail만 누적된다(Android 공식 'bundled transfers' 가이드).
@@ -126,12 +142,25 @@ class LocationRepository(
 
     fun setTracking(active: Boolean) {
         tracking = active
+        // 추적을 (재)시작하면 체류 시간을 새로 센다 — 이전 세션의 체류가
+        // 이월되어 시작부터 60초 주기로 떨어지는 것을 방지
+        if (active) {
+            dwellStartMs = System.currentTimeMillis()
+        }
     }
 
     fun onLocationReceived(location: Location) {
         lastLat     = location.latitude
         lastLng     = location.longitude
         hasLocation = true
+
+        // 격자가 바뀌면 체류 타이머 리셋, 같은 격자 안 이동은 체류 지속
+        val cell = gridKey(location.latitude, location.longitude)
+        if (cell != dwellCellKey) {
+            dwellCellKey = cell
+            dwellStartMs = System.currentTimeMillis()
+        }
+
         locationChannel.trySend(location)
     }
 
@@ -281,7 +310,16 @@ class LocationRepository(
                 // 밀집 모드에서는 최소 30초: 존 리포트가 집계를 대표하므로
                 // 자주 보낼 이유가 없다.
                 val hintMs = (serverClient.suggestedIntervalSec?.coerceIn(10, 60) ?: 10) * 1000L
-                nextDelayMs = if (denseMode) maxOf(hintMs, DENSE_INTERVAL_MS) else hintMs
+                var delayMs = if (denseMode) maxOf(hintMs, DENSE_INTERVAL_MS) else hintMs
+
+                // 장기 체류 감압: 같은 격자에 30분 이상 머무르면 60초로 강하.
+                // (서버 유휴 정리 90초 미만 유지 — 연결은 살아 있다)
+                if (tracking && hasLocation && dwellStartMs > 0 &&
+                    System.currentTimeMillis() - dwellStartMs >= DWELL_THRESHOLD_MS
+                ) {
+                    delayMs = maxOf(delayMs, DWELL_INTERVAL_MS)
+                }
+                nextDelayMs = delayMs
             }
             isRunning.set(false)
         }
