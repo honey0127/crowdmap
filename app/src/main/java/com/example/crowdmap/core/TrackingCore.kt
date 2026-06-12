@@ -3,6 +3,7 @@ package com.example.crowdmap.core
 import android.content.Context
 import android.location.Location
 import com.example.crowdmap.ble.BleScanner
+import com.example.crowdmap.ble.CrowdAdvertiser
 import com.example.crowdmap.location.CrowdLocationManager
 import com.example.crowdmap.location.LocationRepository
 import com.example.crowdmap.model.CongestionData
@@ -39,6 +40,7 @@ object TrackingCore {
 
     private lateinit var serverClient: ServerClient
     private lateinit var bleScanner: BleScanner
+    private lateinit var advertiser: CrowdAdvertiser
     private lateinit var locationManager: CrowdLocationManager
     private lateinit var repository: LocationRepository
 
@@ -71,8 +73,9 @@ object TrackingCore {
 
         serverClient    = ServerClient()
         bleScanner      = BleScanner(app)
+        advertiser      = CrowdAdvertiser(app)
         locationManager = CrowdLocationManager(app)
-        repository      = LocationRepository(serverClient, scope, loadUserId(app), bleScanner)
+        repository      = LocationRepository(serverClient, scope, loadUserId(app), bleScanner, advertiser)
 
         initialized = true
     }
@@ -107,6 +110,11 @@ object TrackingCore {
         if (bleScanner.isAvailable()) {
             bleScanner.startScan()
         }
+        // EN방식 회전 임시 ID 광고: 주변 CrowdMap 단말이 나를 정확히
+        // 1대로 셀 수 있게 한다 (MAC 랜덤화 중복 집계 제거)
+        if (advertiser.isAvailable()) {
+            advertiser.start()
+        }
         locationManager.startLocationUpdates { lat, lng -> onLocation(lat, lng) }
     }
 
@@ -117,6 +125,7 @@ object TrackingCore {
         repository.setTracking(false)
         locationManager.stopLocationUpdates()
         bleScanner.stopScan()
+        advertiser.stop()
         congestionJob?.cancel()
     }
 

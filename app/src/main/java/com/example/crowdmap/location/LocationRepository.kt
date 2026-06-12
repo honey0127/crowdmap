@@ -2,6 +2,7 @@ package com.example.crowdmap.location
 
 import android.location.Location
 import com.example.crowdmap.ble.BleScanner
+import com.example.crowdmap.ble.CrowdAdvertiser
 import com.example.crowdmap.network.ServerClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
@@ -42,7 +43,8 @@ class LocationRepository(
     private val serverClient: ServerClient,
     private val scope: CoroutineScope,
     private val userId: Int = 1001,
-    private val bleScanner: BleScanner? = null
+    private val bleScanner: BleScanner? = null,
+    private val advertiser: CrowdAdvertiser? = null
 ) {
     companion object {
         // 이 수 이상 BLE 기기가 감지되면 밀집 지역으로 판단 → 존 리포트 전송

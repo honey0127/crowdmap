@@ -20,7 +20,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 주변 인파 밀도를 추정하는 보정 데이터로 활용합니다.
  *
  * - RSSI >= -70dBm 필터: 약 10m 이내 기기만 카운트
- * - 60초 슬라이딩 윈도우: 고유 MAC 주소 기준 중복 제거
+ * - 60초 슬라이딩 윈도우 중복 제거:
+ *   · CrowdMap 앱 단말 → 광고 페이로드의 회전 임시 ID 기준 (EN 방식, 결정론적)
+ *   · 그 외 BLE 기기 → MAC 주소 기준 (OS의 MAC 랜덤화 때문에 근사치)
+ *   MAC 랜덤화로 같은 단말이 회전 때마다 새 기기로 집계되던 문제가,
+ *   앱 사용자에 한해서는 광고 ID로 정확히 제거된다.
  *
  * ── 수집 효율화 ──
  * 1. 듀티 사이클 스캔: 30초 주기 중 8초만 라디오를 켠다. 60초 슬라이딩
@@ -51,8 +55,10 @@ class BleScanner(private val context: Context) {
         manager?.adapter
     }
 
-    // MAC 주소 → 마지막 감지 시각 (ms)
+    // dedup 키("id:<hex>" 또는 "mac:<addr>") → 마지막 감지 시각 (ms)
     private val detectedDevices = ConcurrentHashMap<String, Long>()
+    // CrowdMap 앱 단말의 광고 임시 ID(hex) → 마지막 감지 시각 (클러스터 헤드 선출용)
+    private val appDeviceIds = ConcurrentHashMap<String, Long>()
     private val isScanRequested = AtomicBoolean(false)  // 외부에서 요청한 스캔 상태
     private val isRadioOn = AtomicBoolean(false)        // 실제 라디오 동작 여부
 
@@ -60,18 +66,33 @@ class BleScanner(private val context: Context) {
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            if (result.rssi >= RSSI_THRESHOLD) {
-                detectedDevices[result.device.address] = System.currentTimeMillis()
-            }
+            record(result, System.currentTimeMillis())
         }
 
         override fun onBatchScanResults(results: List<ScanResult>) {
             val now = System.currentTimeMillis()
             for (result in results) {
-                if (result.rssi >= RSSI_THRESHOLD) {
-                    detectedDevices[result.device.address] = now
-                }
+                record(result, now)
             }
+        }
+    }
+
+    private fun record(result: ScanResult, now: Long) {
+        if (result.rssi < RSSI_THRESHOLD) return
+
+        // CrowdMap 단말이면 광고 페이로드의 회전 임시 ID로 dedup —
+        // MAC이 랜덤 변경돼도 같은 단말은 같은 키로 집계된다 (EN 방식)
+        val serviceData = result.scanRecord?.serviceData?.get(CrowdAdvertiser.SERVICE_UUID)
+        if (serviceData != null && serviceData.size >= CrowdAdvertiser.ID_LENGTH) {
+            val idHex = StringBuilder(CrowdAdvertiser.ID_LENGTH * 2).apply {
+                for (i in 0 until CrowdAdvertiser.ID_LENGTH) {
+                    append("%02x".format(serviceData[i]))
+                }
+            }.toString()
+            detectedDevices["id:$idHex"] = now
+            appDeviceIds[idHex] = now
+        } else {
+            detectedDevices["mac:${result.device.address}"] = now
         }
     }
 
@@ -152,6 +173,16 @@ class BleScanner(private val context: Context) {
         val cutoff = System.currentTimeMillis() - WINDOW_MS
         detectedDevices.entries.removeIf { it.value < cutoff }
         return detectedDevices.size
+    }
+
+    /**
+     * 최근 windowMs 안에 감지된 CrowdMap 앱 단말의 광고 ID(hex) 목록.
+     * 클러스터 헤드 선출(사전순 최소 ID)에서 사용합니다.
+     */
+    fun getActiveAppIds(windowMs: Long): List<String> {
+        val cutoff = System.currentTimeMillis() - windowMs
+        appDeviceIds.entries.removeIf { it.value < cutoff }
+        return appDeviceIds.keys.toList()
     }
 
     /**

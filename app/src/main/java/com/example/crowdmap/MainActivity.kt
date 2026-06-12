@@ -264,13 +264,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun requestBluetoothPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ContextCompat.checkSelfPermission(
-                    this, Manifest.permission.BLUETOOTH_SCAN
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
+            // SCAN: 주변 밀도 측정, ADVERTISE: EN방식 임시 ID 광고 송출
+            val missing = arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_ADVERTISE
+            ).filter {
+                ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+            }
+            if (missing.isNotEmpty()) {
                 ActivityCompat.requestPermissions(
                     this,
-                    arrayOf(Manifest.permission.BLUETOOTH_SCAN),
+                    missing.toTypedArray(),
                     BLUETOOTH_PERMISSION_REQUEST
                 )
             }
