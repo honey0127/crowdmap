@@ -16,6 +16,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         tools:targetApi="s" />
+    <!-- EN방식 회전 임시 ID 광고 송출용 -->
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"
+        tools:targetApi="s" />
 
     <!-- 백그라운드 위치 추적용 포그라운드 서비스 (화면 꺼져도 수집 유지) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

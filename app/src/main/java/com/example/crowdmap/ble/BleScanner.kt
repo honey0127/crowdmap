@@ -20,7 +20,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 주변 인파 밀도를 추정하는 보정 데이터로 활용합니다.
  *
  * - RSSI >= -70dBm 필터: 약 10m 이내 기기만 카운트
- * - 60초 슬라이딩 윈도우: 고유 MAC 주소 기준 중복 제거
+ * - 60초 슬라이딩 윈도우 중복 제거:
+ *   · CrowdMap 앱 단말 → 광고 페이로드의 회전 임시 ID 기준 (EN 방식, 결정론적)
+ *   · 그 외 BLE 기기 → MAC 주소 기준 (OS의 MAC 랜덤화 때문에 근사치)
+ *   MAC 랜덤화로 같은 단말이 회전 때마다 새 기기로 집계되던 문제가,
+ *   앱 사용자에 한해서는 광고 ID로 정확히 제거된다.
  *
  * ── 수집 효율화 ──
  * 1. 듀티 사이클 스캔: 30초 주기 중 8초만 라디오를 켠다. 60초 슬라이딩
@@ -51,8 +55,13 @@ class BleScanner(private val context: Context) {
         manager?.adapter
     }
 
-    // MAC 주소 → 마지막 감지 시각 (ms)
+    // dedup 키("id:<hex>" 또는 "mac:<addr>") → 마지막 감지 시각 (ms)
     private val detectedDevices = ConcurrentHashMap<String, Long>()
+    // CrowdMap 앱 단말의 광고 임시 ID(hex) → 마지막 감지 시각 (클러스터 헤드 선출용)
+    private val appDeviceIds = ConcurrentHashMap<String, Long>()
+    // 이웃 조난 단말의 위탁 관측치: zoneId → (density, 감지 시각)
+    // 같은 존은 최신 관측으로 덮어쓴다 (서버도 존 리포트를 덮어쓰기로 집계)
+    private val relayObservations = ConcurrentHashMap<Int, Pair<Int, Long>>()
     private val isScanRequested = AtomicBoolean(false)  // 외부에서 요청한 스캔 상태
     private val isRadioOn = AtomicBoolean(false)        // 실제 라디오 동작 여부
 
@@ -60,19 +69,65 @@ class BleScanner(private val context: Context) {
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            if (result.rssi >= RSSI_THRESHOLD) {
-                detectedDevices[result.device.address] = System.currentTimeMillis()
-            }
+            record(result, System.currentTimeMillis())
         }
 
         override fun onBatchScanResults(results: List<ScanResult>) {
             val now = System.currentTimeMillis()
             for (result in results) {
-                if (result.rssi >= RSSI_THRESHOLD) {
-                    detectedDevices[result.device.address] = now
-                }
+                record(result, now)
             }
         }
+    }
+
+    private fun record(result: ScanResult, now: Long) {
+        if (result.rssi < RSSI_THRESHOLD) return
+
+        // CrowdMap 단말이면 광고 페이로드의 회전 임시 ID로 dedup —
+        // MAC이 랜덤 변경돼도 같은 단말은 같은 키로 집계된다 (EN 방식)
+        val serviceData = result.scanRecord?.serviceData?.get(CrowdAdvertiser.SERVICE_UUID)
+        if (serviceData != null && serviceData.size >= CrowdAdvertiser.ID_LENGTH) {
+            val idHex = StringBuilder(CrowdAdvertiser.ID_LENGTH * 2).apply {
+                for (i in 0 until CrowdAdvertiser.ID_LENGTH) {
+                    append("%02x".format(serviceData[i]))
+                }
+            }.toString()
+            detectedDevices["id:$idHex"] = now
+            appDeviceIds[idHex] = now
+
+            // 조난 페이로드(9B): 업로드가 막힌 이웃의 존 관측치 — 위탁 수신
+            if (serviceData.size >= CrowdAdvertiser.DISTRESS_LENGTH) {
+                val base = CrowdAdvertiser.ID_LENGTH
+                val zoneId = ((serviceData[base].toInt() and 0xFF) shl 24) or
+                             ((serviceData[base + 1].toInt() and 0xFF) shl 16) or
+                             ((serviceData[base + 2].toInt() and 0xFF) shl 8) or
+                             (serviceData[base + 3].toInt() and 0xFF)
+                val density = serviceData[base + 4].toInt() and 0xFF
+                if (zoneId >= 0 && density > 0) {
+                    relayObservations[zoneId] = density to now
+                }
+            }
+        } else {
+            detectedDevices["mac:${result.device.address}"] = now
+        }
+    }
+
+    /**
+     * 이웃 조난 단말로부터 위탁받은 존 관측치를 회수(consume)합니다.
+     * 회수된 항목은 비워져 같은 관측이 매 배치 중복 송신되지 않는다.
+     * (조난 단말이 계속 광고 중이면 다음 스캔에서 다시 채워진다 —
+     *  서버 존 리포트 TTL 5분 내 주기적 갱신 효과)
+     */
+    fun takeRelayObservations(maxAgeMs: Long): List<Pair<Int, Int>> {
+        val cutoff = System.currentTimeMillis() - maxAgeMs
+        val out = ArrayList<Pair<Int, Int>>()
+        val it = relayObservations.entries.iterator()
+        while (it.hasNext()) {
+            val e = it.next()
+            if (e.value.second >= cutoff) out.add(e.key to e.value.first)
+            it.remove()
+        }
+        return out
     }
 
     // ON ↔ OFF 상태를 오가며 자기 자신을 다시 스케줄링하는 듀티 사이클 루프
@@ -152,6 +207,16 @@ class BleScanner(private val context: Context) {
         val cutoff = System.currentTimeMillis() - WINDOW_MS
         detectedDevices.entries.removeIf { it.value < cutoff }
         return detectedDevices.size
+    }
+
+    /**
+     * 최근 windowMs 안에 감지된 CrowdMap 앱 단말의 광고 ID(hex) 목록.
+     * 클러스터 헤드 선출(사전순 최소 ID)에서 사용합니다.
+     */
+    fun getActiveAppIds(windowMs: Long): List<String> {
+        val cutoff = System.currentTimeMillis() - windowMs
+        appDeviceIds.entries.removeIf { it.value < cutoff }
+        return appDeviceIds.keys.toList()
     }
 
     /**

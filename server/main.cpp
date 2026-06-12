@@ -68,7 +68,8 @@ int main() {
         redisClient = std::make_unique<RedisClient>(redisHost, redisPort);
         Log::info("Redis 연결 성공 (" + redisHost + ":" + std::to_string(redisPort) + ")");
         densityEngine.setRedis(redisClient.get());
-        densityEngine.restoreFromRedis(*redisClient);
+        const size_t restored = densityEngine.restoreFromRedis(*redisClient);
+        Log::info("Redis 복원 완료: 이벤트 " + std::to_string(restored) + "건");
     } catch (const std::exception& e) {
         Log::err(std::string("Redis 연결 실패 - 영속성 비활성화: ") + e.what());
     }
@@ -119,6 +120,10 @@ int main() {
     g_cleanupRunning = false;
     if (cleanupThread.joinable()) cleanupThread.join();
     feeder.stop();
+
+    // densityEngine(먼저 선언)보다 redisClient(나중 선언)가 먼저 소멸하므로,
+    // 소멸자에 맡기지 말고 여기서 writer 스레드를 명시적으로 중지한다.
+    densityEngine.stopRedisPersistence();
 
     g_server = nullptr;
     curl_global_cleanup();
