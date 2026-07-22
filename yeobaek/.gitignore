@@ -1,0 +1,14 @@
+# 빌드 산출물
+engine/build/
+**/*.so
+**/__pycache__/
+*.pyc
+
+# 데이터 산출물(스크립트로 재현) — 커밋하지 않는다
+data/*.db
+data/*.npy
+data/*.npz
+
+# 파이썬 환경
+.venv/
+venv/

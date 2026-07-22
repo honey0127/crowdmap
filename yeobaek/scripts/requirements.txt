@@ -1,0 +1,4 @@
+# 데이터 파이프라인(Phase 1) 전용 의존성 — 서버 런타임과 분리(무겁다).
+requests>=2.31
+numpy>=1.26
+sentence-transformers>=2.7   # intfloat/multilingual-e5-small (torch 포함)

@@ -1,0 +1,10 @@
+# 여백 서버 런타임 의존성 (Phase 3)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+numpy>=1.26
+requests>=2.31
+# 선택: RAG LLM 재서술(결정 G). USE_LLM=1 일 때만 필요.
+anthropic>=0.40
+# 참고: C++ 엔진(yeobaek_engine.*.so)은 engine/CMakeLists.txt 로 빌드해
+#       server/ 옆에 복사된다(pybind11 필요).
