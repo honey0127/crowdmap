@@ -73,8 +73,8 @@ def probe_seoul(key: str, area: str) -> None:
 def probe_tour(key: str) -> None:
     print("\n" + "=" * 64, "\n[2] TourAPI KorService2 — areaBasedList2/detailCommon2 (서울)\n" + "=" * 64)
     common = {"serviceKey": key, "MobileOS": "ETC", "MobileApp": "yeobaek", "_type": "json"}
-    q = urlencode({**common, "areaCode": 1, "numOfRows": 3, "pageNo": 1,
-                   "listYN": "Y", "arrange": "C"})
+    # KorService2: listYN 파라미터 없음(있으면 INVALID_REQUEST_PARAMETER_ERROR)
+    q = urlencode({**common, "areaCode": 1, "numOfRows": 3, "pageNo": 1, "arrange": "C"})
     try:
         status, body = _get(f"{TOUR_BASE}/areaBasedList2?{q}", timeout=15)
     except Exception as e:
@@ -99,8 +99,8 @@ def probe_tour(key: str) -> None:
                   ("contentid", "title", "mapx", "mapy", "areacode", "sigungucode",
                    "cat1", "cat2", "cat3")})
     cid = first.get("contentid")
-    q2 = urlencode({**common, "contentId": cid, "defaultYN": "Y", "overviewYN": "Y",
-                    "mapinfoYN": "Y", "addrinfoYN": "Y", "firstImageYN": "Y", "catcodeYN": "Y"})
+    # KorService2 detailCommon2: *YN 플래그 없이 contentId 만으로 기본 반환
+    q2 = urlencode({**common, "contentId": cid})
     try:
         _, body2 = _get(f"{TOUR_BASE}/detailCommon2?{q2}", timeout=15)
         di = json.loads(body2)["response"]["body"]["items"]["item"]

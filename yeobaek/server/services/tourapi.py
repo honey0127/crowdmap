@@ -63,11 +63,11 @@ class TourAPIClient:
                         content_type_id: Optional[int] = None,
                         arrange: str = "C") -> list[dict]:
         """지역기반 관광지 목록. arrange=C: 수정일순(대표이미지 포함)."""
+        # KorService2 규격: listYN 없음(=목록 기본). arrange 로 정렬.
         params: dict[str, Any] = {
             "areaCode": area_code,
             "numOfRows": rows,
             "pageNo": page,
-            "listYN": "Y",
             "arrange": arrange,
         }
         if content_type_id is not None:
@@ -75,15 +75,7 @@ class TourAPIClient:
         return self._get("areaBasedList2", params)
 
     def detail_common(self, content_id: int) -> Optional[dict]:
-        """공통정보(overview/좌표/주소/카테고리)."""
-        params = {
-            "contentId": content_id,
-            "defaultYN": "Y",
-            "overviewYN": "Y",
-            "mapinfoYN": "Y",
-            "addrinfoYN": "Y",
-            "firstImageYN": "Y",
-            "catcodeYN": "Y",
-        }
-        items = self._get("detailCommon2", params)
+        """공통정보(overview 등). KorService2 는 *YN 플래그 없이 기본 반환한다.
+        좌표(mapx/mapy)·카테고리(cat1~3)는 areaBasedList2 결과에 이미 포함된다."""
+        items = self._get("detailCommon2", {"contentId": content_id})
         return items[0] if items else None
