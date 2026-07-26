@@ -11,13 +11,13 @@
 | 영역 | 절차서 | 상태 | 비고 |
 | --- | --- | --- | --- |
 | C++ 엔진 이식·확장 | Phase 0, 2 | ✅ 완료·검증 | `.so` 빌드/임포트, 단위테스트 통과 |
-| 예보 클라이언트(FCST_PPLTN) | 2-1 | 🟡 코드 완료 | **실 API 키로 스키마·지평 실측 미완(가장 큰 리스크)** |
+| 예보 클라이언트(FCST_PPLTN) | 2-1 | ✅ 완료·검증 | **실 API 실측 통과**(FCST_TIME 포맷·지평 ~12h/1시간·필드 일치) |
 | ForecastProvider 캐시 | 2-2 | ✅ 완료 | fallback 체인 포함 |
 | Scheduler(시간의존 TSP) | 2-3 | ✅ 완료·검증 | 재정렬·치환·중복방지 단위테스트 |
 | pybind11 바인딩 | 2-4 | ✅ 완료 | GIL 해제, keep_alive |
 | FastAPI 3 엔드포인트 | Phase 3 | ✅ 완료·검증 | TestClient E2E |
 | RAG 카드(템플릿+LLM) | 3-3 | 🟡 코드 완료 | 템플릿 검증 완료, LLM 경로는 키 필요 |
-| 데이터 스크립트 | Phase 1 | 🟡 코드 완료 | `build_area_map`만 실행 검증(키 불필요) |
+| 데이터 스크립트 | Phase 1 | 🟡 규격검증 완료 | KorService2 필드·파라미터 실측 정합 확인, 대량 수집 실행은 로컬 |
 | Android 3화면 | Phase 4 | ⬜ 미착수 | 범위 제외 |
 | 모듈4 실시간 스왑 | 4-5 | 🟡 훅만 | `router.resolve_now` 노출, 앱 연동 미완 |
 | 통합·안정화·기능설명서 | Phase 5 | 🟡 일부 | 해시태그 매핑/README 착수, valgrind·시연 고정 미완 |
@@ -52,12 +52,12 @@
 
 ## 2. 다음에 해야 할 일 (우선순위 순)
 
-### 🔴 P0 — 컨셉 게이트: 예보 실측 (절차서 Phase 0-1)
-> 여기서 예보가 기대대로 안 나오면 시간축 설계 자체를 조정해야 하므로 **가장 먼저**.
-- [ ] `SEOUL_API_KEY`로 `citydata_ppltn` 실호출 → `FCST_PPLTN[]`의 `FCST_TIME/FCST_CONGEST_LVL/FCST_PPLTN_MIN/MAX` 존재·구조 확인.
-- [ ] **예보 지평(horizon)** 확인: 몇 시간 앞까지, 몇 분/시간 간격인지 → 데모 일정 범위 결정.
-- [ ] `FCST_TIME` 실제 포맷 검증 — 현재 코드는 `"YYYY-MM-DD HH:MM"`(KST)로 가정. 다르면 `parseKstToEpoch` 수정.
-- [ ] TourAPI 실측(0-2): `mapx=경도 / mapy=위도` 규약, `overview` 길이·품질 샘플 점검.
+### ✅ P0 — 컨셉 게이트: 예보 실측 (절차서 Phase 0-1) — **통과 (2026-07-26 실측)**
+> 부록 A "Phase 0 실측 결과" 참조. 두 API 모두 코드 가정과 일치 → **코드 변경 불필요**.
+- [x] `citydata_ppltn` 실호출 → `FCST_PPLTN[]` 필드(`FCST_TIME/FCST_CONGEST_LVL/FCST_PPLTN_MIN/MAX`) 확인.
+- [x] **예보 지평** 확인: **당일 ~12시간, 1시간 간격(12개)** → 데모는 당일 일정으로 설계.
+- [x] `FCST_TIME` 포맷 검증 — `"YYYY-MM-DD HH:MM"`(KST) 확인, `parseKstToEpoch` 그대로 OK.
+- [x] TourAPI(0-2): `mapx=경도/mapy=위도` 확인, KorService2 `listYN`/`*YN` 파라미터 규격 정정 완료, `overview` 정상.
 
 ### 🟠 P1 — 실데이터로 파이프라인 1회 완주 (Phase 1)
 - [ ] `collect_tourapi.py` 실행 → `places` 적재(overview 없는 항목 스킵 로그 확인).
@@ -110,5 +110,25 @@
 - **브랜치**: 이 작업은 **`honey`** 에서 진행. 자동 생성됐던 `claude/code-writing-kodsp8`에만 있던 커밋 5개(`signal/*.kt` 등)는 `honey`에 미포함 — 필요하면 별도 병합.
 - **키 없을 때**: 예보는 네트워크 미시도·중립(보통) 폴백. 그래서 매칭/스케줄러/카드는 키 없이도 돌지만, **혼잡도 수치는 전부 2로 고정**되어 스케줄 재정렬/치환이 발동하지 않는다(정상 동작이지 버그 아님).
 - **`.so` 재빌드 시점**: `engine/` 헤더를 고치면 반드시 `cmake --build build` 재실행(빌드 산출물은 gitignore, `server/` 옆으로 자동 복사).
-- **아직 미검증 가정 1개**: `FCST_TIME` 포맷/예보 지평 — P0에서 실측 전까지는 "동작할 것으로 설계됨" 상태.
+- **데모 시각 제약(실측 확정)**: 예보가 **당일 ~12시간 앞까지**만 나오므로, 데모는 반드시 **오늘·현재 이후 12시간 이내 당일 코스**로. 그 밖의 미래 일정은 예보 부재 → 중립 폴백.
+- **TourAPI 는 KorService2 규격**: `listYN` 및 `detailCommon2` 의 `*YN` 플래그를 넣으면 `INVALID_REQUEST_PARAMETER_ERROR`. 코드는 정정 완료.
 - **데이터 산출물은 커밋 안 함**: `data/*.db`, `*.npy`는 스크립트로 재생성(gitignore).
+
+---
+
+## 부록 A. Phase 0 실측 결과 (2026-07-26, 데이터 활용 근거)
+
+두 OpenAPI 를 실 키로 호출해 스키마·지평을 확인함(`scripts/probe_apis.py`). **코드 가정과 전부 일치 → 파서/매핑 변경 없음.**
+
+**서울 실시간 도시데이터 (`citydata_ppltn`, 경복궁)**
+- `FCST_PPLTN[]` 필드: `FCST_TIME`, `FCST_CONGEST_LVL`, `FCST_PPLTN_MIN`, `FCST_PPLTN_MAX`
+- `FCST_TIME` 포맷: `2026-07-26 19:00` = `"YYYY-MM-DD HH:MM"`(KST)
+- 예보 지평: **당일 ~12시간, 1시간 간격(12개)** — 예) 19:00 ~ 익일 06:00
+- 레벨 라벨: `여유/보통/약간 붐빔/붐빔` → 1~4 (실시간·예보 공통)
+- → `parseKstToEpoch`·`seoulLevelToInt`·1시간 timeBucket 모두 정합
+
+**TourAPI KorService2 (서울, areaCode=1)**
+- `areaBasedList2`: `totalCount=2386`, 필드 `contentid/title/addr1/mapx/mapy/areacode/sigungucode/cat1~3` 확인
+- 좌표: `mapx=경도(127.x)`, `mapy=위도(37.x)` → schema `mapx=lng, mapy=lat` 정합
+- `detailCommon2`: `contentId` 만으로 `overview` 기본 반환(YN 플래그 불필요)
+- 파라미터 정정: `listYN`(목록), `defaultYN/overviewYN/...`(상세) 제거
