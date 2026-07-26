@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="16dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:background="?android:attr/selectableItemBackground">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/twin_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="대안 장소"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/twin_meta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="유사도 89% · 2.1km"
+            android:textSize="12sp"
+            android:textColor="#757575" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/twin_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="여유"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="4dp"
+        android:background="#2E7D32" />
+</LinearLayout>

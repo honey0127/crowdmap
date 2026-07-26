@@ -34,6 +34,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.CrowdMap">
         <meta-data
             android:name="com.google.android.geo.API_KEY"
@@ -51,6 +52,21 @@
             android:name=".service.TrackingService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- ── 여백(Yeobaek) 코스 플래너 3화면 ── -->
+        <!-- 홈: CrowdMap 을 건드리지 않도록 별도 런처("여백")로 노출 -->
+        <activity
+            android:name=".yeobaek.ui.YeobaekHomeActivity"
+            android:label="여백"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".yeobaek.ui.PlannerActivity" android:exported="false" />
+        <activity android:name=".yeobaek.ui.AlternativesActivity" android:exported="false" />
+        <activity android:name=".yeobaek.ui.CardActivity" android:exported="false" />
     </application>
 
 </manifest>
