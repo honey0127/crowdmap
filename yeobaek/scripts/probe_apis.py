@@ -1,41 +1,59 @@
 """Phase 0 실측 도구 — 서울 FCST_PPLTN + TourAPI 스키마를 한 번에 확인한다.
 
-키는 **환경변수에서만** 읽는다(파일에 저장 금지):
-    export SEOUL_API_KEY=...        # 서울 실시간 도시데이터
-    export TOURAPI_KEY=...          # TourAPI 일반 인증키(디코딩)
-    cd yeobaek && python scripts/probe_apis.py [지역명]
+**표준 라이브러리만 사용**(requests/pip 불필요). 최소 파이썬(MSYS2 등)에서도 동작.
 
-출력의 "FCST_TIME 포맷 / 지평(horizon)"을 개발자에게 공유하면
-필요 시 SeoulCityDataForecastClient 의 파서를 맞출 수 있다.
+키는 환경변수에서만 읽는다(파일에 저장 금지):
+  PowerShell:  $env:SEOUL_API_KEY="..."; $env:TOURAPI_KEY="..."; python scripts/probe_apis.py
+  bash:        SEOUL_API_KEY=... TOURAPI_KEY=... python scripts/probe_apis.py [지역명]
 
-※ 이 스크립트는 사내 개발망/로컬 등 **한국 공공 API 로 egress 가 열린 곳**에서 실행.
-   (일부 CI/샌드박스는 apis.data.go.kr / openapi.seoul.go.kr 를 정책상 차단)
+출력의 "FCST_TIME 포맷 / 지평(horizon)"을 개발자에게 공유하면 파서를 맞출 수 있다.
+※ 한국 공공 API 로 egress 가 열린 로컬/개발망에서 실행(일부 CI/샌드박스는 차단).
 """
 from __future__ import annotations
 import json
 import os
+import ssl
 import sys
-from urllib.parse import quote
-
-import requests
+from urllib.parse import quote, urlencode
+from urllib.request import urlopen
+from urllib.error import URLError, HTTPError
 
 TOUR_BASE = "https://apis.data.go.kr/B551011/KorService2"
+
+
+def _get(url: str, timeout: int = 15) -> tuple[int, str]:
+    """(status, body). HTTPS 인증서 검증 실패 시(최소 파이썬 CA 부재) 진단 목적
+    비검증 컨텍스트로 1회 재시도한다(공개 데이터 조회 한정)."""
+    try:
+        with urlopen(url, timeout=timeout) as r:
+            return r.status, r.read().decode("utf-8", "replace")
+    except HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
+    except URLError as e:
+        if isinstance(e.reason, ssl.SSLError):
+            print("   ! TLS 인증서 검증 실패 → 비검증 재시도(진단용, 공개데이터 한정)")
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            with urlopen(url, timeout=timeout, context=ctx) as r:
+                return r.status, r.read().decode("utf-8", "replace")
+        raise
 
 
 def probe_seoul(key: str, area: str) -> None:
     print("=" * 64, f"\n[1] 서울 실시간 도시데이터 — {area} FCST_PPLTN\n" + "=" * 64)
     url = f"http://openapi.seoul.go.kr:8088/{key}/json/citydata_ppltn/1/1/{quote(area)}"
     try:
-        r = requests.get(url, timeout=10)
+        status, body = _get(url, timeout=10)
     except Exception as e:
         print("네트워크 실패:", type(e).__name__, e)
         print("→ 이 호스트(:8088)로 egress 가 막힌 환경일 수 있습니다. 로컬에서 실행하세요.")
         return
-    print("HTTP", r.status_code, "len", len(r.text))
+    print("HTTP", status, "len", len(body))
     try:
-        j = r.json()
+        j = json.loads(body)
     except ValueError:
-        print("비JSON 응답:", r.text[:300]); return
+        print("비JSON 응답:", body[:300]); return
     root = j.get("SeoulRtd.citydata_ppltn")
     if not isinstance(root, list) or not root:
         print("citydata_ppltn 파싱 실패. 원문:", json.dumps(j, ensure_ascii=False)[:400]); return
@@ -55,24 +73,24 @@ def probe_seoul(key: str, area: str) -> None:
 def probe_tour(key: str) -> None:
     print("\n" + "=" * 64, "\n[2] TourAPI KorService2 — areaBasedList2/detailCommon2 (서울)\n" + "=" * 64)
     common = {"serviceKey": key, "MobileOS": "ETC", "MobileApp": "yeobaek", "_type": "json"}
+    q = urlencode({**common, "areaCode": 1, "numOfRows": 3, "pageNo": 1,
+                   "listYN": "Y", "arrange": "C"})
     try:
-        r = requests.get(f"{TOUR_BASE}/areaBasedList2",
-                         params={**common, "areaCode": 1, "numOfRows": 3, "pageNo": 1,
-                                 "listYN": "Y", "arrange": "C"}, timeout=15)
+        status, body = _get(f"{TOUR_BASE}/areaBasedList2?{q}", timeout=15)
     except Exception as e:
         print("네트워크 실패:", type(e).__name__, e)
         print("→ apis.data.go.kr 로 egress 가 막힌 환경일 수 있습니다. 로컬에서 실행하세요.")
         return
-    print("HTTP", r.status_code)
+    print("HTTP", status)
     try:
-        body = r.json()["response"]["body"]
+        b = json.loads(body)["response"]["body"]
     except Exception:
-        print("응답 파싱 실패(키·승인상태 확인). 원문:", r.text[:400]); return
-    items = body.get("items")
+        print("응답 파싱 실패(키·승인상태 확인). 원문:", body[:400]); return
+    items = b.get("items")
     it = (items.get("item") if isinstance(items, dict) else items) or []
     if isinstance(it, dict):
         it = [it]
-    print("totalCount:", body.get("totalCount"), "| 받은 개수:", len(it))
+    print("totalCount:", b.get("totalCount"), "| 받은 개수:", len(it))
     if not it:
         return
     first = it[0]
@@ -81,16 +99,15 @@ def probe_tour(key: str) -> None:
                   ("contentid", "title", "mapx", "mapy", "areacode", "sigungucode",
                    "cat1", "cat2", "cat3")})
     cid = first.get("contentid")
-    r2 = requests.get(f"{TOUR_BASE}/detailCommon2",
-                      params={**common, "contentId": cid, "defaultYN": "Y", "overviewYN": "Y",
-                              "mapinfoYN": "Y", "addrinfoYN": "Y", "firstImageYN": "Y",
-                              "catcodeYN": "Y"}, timeout=15)
+    q2 = urlencode({**common, "contentId": cid, "defaultYN": "Y", "overviewYN": "Y",
+                    "mapinfoYN": "Y", "addrinfoYN": "Y", "firstImageYN": "Y", "catcodeYN": "Y"})
     try:
-        di = r2.json()["response"]["body"]["items"]["item"]
+        _, body2 = _get(f"{TOUR_BASE}/detailCommon2?{q2}", timeout=15)
+        di = json.loads(body2)["response"]["body"]["items"]["item"]
         if isinstance(di, list):
             di = di[0]
-    except Exception:
-        print("detailCommon2 파싱 실패. 원문:", r2.text[:400]); return
+    except Exception as e:
+        print("detailCommon2 실패:", type(e).__name__, e); return
     ov = di.get("overview") or ""
     print(f"\ndetailCommon2 키: {list(di.keys())}")
     print(f"overview 길이: {len(ov)} | 앞부분: {ov[:120].replace(chr(10), ' ')}")
