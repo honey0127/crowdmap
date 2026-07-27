@@ -13,6 +13,32 @@ from ..config import settings
 
 LEVEL_LABELS = {1: "여유", 2: "보통", 3: "약간 붐빔", 4: "붐빔"}
 
+# TourAPI 서비스분류코드 → 사람이 읽는 라벨. 카드에 코드가 그대로 노출되지 않도록.
+# 깊은 코드(cat3, 9자)부터 얕은 코드(cat1, 3자) 순으로 조회한다.
+CAT_LABELS = {
+    # 역사·문화 (A02)
+    "A02010100": "고궁", "A02010200": "성", "A02010400": "고택",
+    "A02010600": "민속마을", "A02010700": "유적·사적지",
+    "A0201": "역사 유적", "A0203": "문화시설(박물관·미술관)",
+    "A0206": "종교·성지", "A02": "역사·문화",
+    # 자연 (A01)
+    "A0101": "자연 명소", "A0102": "휴양·힐링", "A01": "자연",
+    # 레포츠 (A03) / 쇼핑 (A04) / 음식 (A05)
+    "A0302": "레포츠", "A03": "레포츠",
+    "A0401": "쇼핑·시장", "A04": "쇼핑",
+    "A0502": "맛집", "A05": "맛집",
+}
+
+
+def cat_label(code: Optional[str]) -> Optional[str]:
+    """분류코드를 라벨로. 정확 코드 → cat2(5자) → cat1(3자) 순 폴백."""
+    if not code:
+        return None
+    for key in (code, code[:5], code[:3]):
+        if key in CAT_LABELS:
+            return CAT_LABELS[key]
+    return None
+
 
 def _congestion_diff_pct(source_level: int, alt_level: int) -> int:
     """원본 대비 대안지의 혼잡도 감소율(%). level 은 1~4.
@@ -42,9 +68,10 @@ def _shared_category(source_cat: Optional[str], alt_cat: Optional[str]) -> Optio
 def compute_grounded_facts(source: dict, alt: dict,
                            source_level: int, alt_level: int) -> dict:
     """카드에 넣을 '검증된 사실'을 코드가 계산."""
+    code = _shared_category(source.get("cat"), alt.get("cat"))
     return {
         "congestion_diff_pct": _congestion_diff_pct(source_level, alt_level),
-        "shared_category": _shared_category(source.get("cat"), alt.get("cat")),
+        "shared_category": cat_label(code) or code,   # 라벨 우선(부록 B), 없으면 코드
         "source_level_label": LEVEL_LABELS.get(source_level, "보통"),
         "alt_level_label": LEVEL_LABELS.get(alt_level, "보통"),
     }
@@ -52,8 +79,8 @@ def compute_grounded_facts(source: dict, alt: dict,
 
 def _template_body(source: dict, alt: dict, facts: dict) -> str:
     diff = facts["congestion_diff_pct"]
-    cat = facts["shared_category"]
-    cat_clause = f" 같은 '{cat}' 감성을 유지하면서" if cat else ""
+    cat = facts["shared_category"]   # 이미 라벨화됨
+    cat_clause = f" 같은 ‘{cat}’ 감성을 유지하면서" if cat else ""
     if diff > 0:
         return (
             f"{source['title']}은(는) 지금 도착 시점 예보가 '{facts['source_level_label']}'입니다. "
