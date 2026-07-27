@@ -58,15 +58,21 @@
         <activity
             android:name=".yeobaek.ui.YeobaekHomeActivity"
             android:label="여백"
+            android:theme="@style/Theme.Yeobaek"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".yeobaek.ui.PlannerActivity" android:exported="false" />
-        <activity android:name=".yeobaek.ui.AlternativesActivity" android:exported="false" />
-        <activity android:name=".yeobaek.ui.CardActivity" android:exported="false" />
+        <activity android:name=".yeobaek.ui.SearchActivity"
+            android:theme="@style/Theme.Yeobaek" android:exported="false" />
+        <activity android:name=".yeobaek.ui.PlannerActivity"
+            android:theme="@style/Theme.Yeobaek" android:exported="false" />
+        <activity android:name=".yeobaek.ui.AlternativesActivity"
+            android:theme="@style/Theme.Yeobaek" android:exported="false" />
+        <activity android:name=".yeobaek.ui.CardActivity"
+            android:theme="@style/Theme.Yeobaek" android:exported="false" />
     </application>
 
 </manifest>

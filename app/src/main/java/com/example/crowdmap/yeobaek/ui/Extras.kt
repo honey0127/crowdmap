@@ -8,4 +8,6 @@ object Extras {
     const val TARGET_ID = "target_id"    // Long     — 대안을 찾을 stop
     const val SOURCE_ID = "source_id"    // Long
     const val ALT_ID = "alt_id"          // Long
+    const val PLACE_ID = "place_id"      // Long   — SearchActivity 결과
+    const val PLACE_TITLE = "place_title" // String — SearchActivity 결과
 }

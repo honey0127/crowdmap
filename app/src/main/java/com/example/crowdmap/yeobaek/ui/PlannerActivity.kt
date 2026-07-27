@@ -28,16 +28,19 @@ class PlannerActivity : AppCompatActivity() {
         val plan: ScheduleResponse? =
             planJson?.let { YeobaekClient.gson.fromJson(it, ScheduleResponse::class.java) }
 
-        val header = findViewById<TextView>(R.id.planner_header)
+        val saved = findViewById<TextView>(R.id.planner_saved)
+        val sub = findViewById<TextView>(R.id.planner_sub)
         val recycler = findViewById<RecyclerView>(R.id.planner_list)
         recycler.layoutManager = LinearLayoutManager(this)
 
         if (plan == null || plan.ordered.isEmpty()) {
-            header.text = "코스를 만들지 못했습니다"
+            saved.text = "코스를 만들지 못했습니다"
+            sub.text = ""
             return
         }
 
-        header.text = "혼잡 ${plan.savedCongestionPct}% 절약 · 비용 ${round2(plan.totalCost)}"
+        saved.text = "혼잡 ${plan.savedCongestionPct}% 절약"
+        sub.text = "${plan.ordered.size}곳 · 최적 비용 ${round2(plan.totalCost)}"
         recycler.adapter = PlanAdapter(plan.ordered) { stop ->
             openAlternatives(stop, stops, startTime)
         }

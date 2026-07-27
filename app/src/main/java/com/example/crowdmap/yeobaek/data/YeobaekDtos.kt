@@ -83,6 +83,16 @@ data class CardResponse(
     @SerializedName("generated_by") val generatedBy: String,   // "template" | "llm"
 )
 
+// ── /api/v1/places/search ──
+data class PlaceResult(
+    @SerializedName("content_id") val contentId: Long,
+    val title: String,
+    val addr: String? = null,
+    @SerializedName("cat_label") val catLabel: String? = null,
+)
+
+data class SearchResponse(val results: List<PlaceResult>)
+
 // 혼잡 레벨 유틸(뷰에서 배지 색·라벨에 사용)
 object Congestion {
     fun label(level: Int): String = when (level) {

@@ -1,5 +1,6 @@
 package com.example.crowdmap.yeobaek.ui
 
+import android.content.res.ColorStateList
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -33,7 +34,7 @@ class TwinAdapter(
         val sim = (t.similarity * 100).toInt()
         h.meta.text = "유사도 ${sim}% · ${t.distKm}km"
         h.badge.text = Congestion.label(t.forecastLevel)
-        h.badge.setBackgroundColor(Congestion.color(t.forecastLevel))
+        h.badge.backgroundTintList = ColorStateList.valueOf(Congestion.color(t.forecastLevel))
         h.itemView.setOnClickListener { onPick(t) }
     }
 

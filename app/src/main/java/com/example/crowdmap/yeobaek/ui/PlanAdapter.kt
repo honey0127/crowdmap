@@ -1,5 +1,6 @@
 package com.example.crowdmap.yeobaek.ui
 
+import android.content.res.ColorStateList
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -35,7 +36,7 @@ class PlanAdapter(
         h.arrival.text = s.arrival
         h.title.text = s.title
         h.badge.text = Congestion.label(s.forecastLevel)
-        h.badge.setBackgroundColor(Congestion.color(s.forecastLevel))
+        h.badge.backgroundTintList = ColorStateList.valueOf(Congestion.color(s.forecastLevel))
 
         if (s.substitutedFrom != null) {
             h.sub.visibility = View.VISIBLE
