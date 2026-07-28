@@ -67,6 +67,22 @@ uvicorn server.main:app --reload
 > `SEOUL_API_KEY` 가 없으면 예보는 **네트워크 호출 없이 중립값(보통)** 으로 폴백한다
 > (오프라인/데모 안전). 매칭·스케줄러·카드는 그대로 동작한다.
 
+### 4) Android 앱 (홈→플래너→대안카드, Phase 4)
+CrowdMap 앱 모듈(`app/`)에 여백 화면들을 **별도 런처("여백")** 로 추가했다(기존 CrowdMap 런처 무영향).
+- **디자인**: Material 3 테마(`Theme.Yeobaek`, 차분한 종이톤+세이지 그린), 카드/칩 기반.
+- 흐름: `홈`(날짜·시간 피커 + **이름으로 장소 검색·칩 추가**) → `SearchActivity`(`/places/search`) → `/schedule`
+  → `Planner`(타임라인 카드·혼잡 배지, 고혼잡 "대안 보기" → `/match`) → `Alternatives`(감성 쌍둥이 카드)
+  → `Card`(`/card` 근거 + **원탭 스왑 → 재스케줄**)
+- 네트워킹: Retrofit2 + Gson + Coroutines(`lifecycleScope`), 디바운스 검색, 로딩/에러 처리.
+- 실행: Android Studio 로 열고(Gradle sync) 실기기/에뮬레이터에서 "여백" 아이콘 실행.
+  - `local.properties` 에 서버 IP: `SERVER_IP=192.168.x.x` (PC의 LAN IP). 포트는 `8000` 고정(`YeobaekClient.PORT`).
+  - 서버는 폰에서 접근되게 바인딩: `uvicorn server.main:app --host 0.0.0.0 --port 8000`
+  - 에뮬레이터면 호스트 PC = `10.0.2.2` → `SERVER_IP=10.0.2.2`
+  - 로컬 평문 HTTP 허용을 위해 `usesCleartextTraffic=true` 설정됨(개발용).
+
+> ⚠️ Android 코드는 이 저장소 환경(Android SDK/Gradle 부재)에서 **빌드 검증은 못 했다** —
+> Android Studio 에서 최초 빌드가 필요하다. 엔진/서버는 실행까지 검증됨.
+
 ---
 
 ## API (부록 B)
@@ -74,6 +90,7 @@ uvicorn server.main:app --reload
 - `POST /api/v1/match` — `content_id` → 반경 후보(C++) → numpy 코사인 → 감성 쌍둥이 top-K(+예보 혼잡도)
 - `POST /api/v1/schedule` — `start_time`+`stops`+`weights` → 시간의존 최적 코스, 절약 혼잡도 %
 - `POST /api/v1/card` — `source_id`,`alt_id` → 설득 카드. **수치는 코드가 계산, LLM 은 문장만(결정 G)**
+- `GET  /api/v1/places/search?q=` — 이름 부분일치 검색(+cat_label). 앱에서 방문지 추가용.
 
 ---
 

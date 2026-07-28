@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from .config import settings
 from .db import repository
 from .engine import engine_state
-from .api import match, schedule, card
+from .api import match, schedule, card, places
 
 log = logging.getLogger("yeobaek")
 
@@ -39,6 +39,7 @@ app = FastAPI(title="여백(Yeobaek) API", version="0.1.0", lifespan=lifespan)
 app.include_router(match.router)
 app.include_router(schedule.router)
 app.include_router(card.router)
+app.include_router(places.router)
 
 
 @app.exception_handler(Exception)

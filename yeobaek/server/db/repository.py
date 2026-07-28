@@ -99,3 +99,18 @@ def get_area_map(ids: Iterable[int]) -> dict[int, tuple[str, float]]:
 def get_area_name(content_id: int) -> Optional[str]:
     m = get_area_map([content_id])
     return m[content_id][0] if content_id in m else None
+
+
+def search_places(q: str, limit: int = 20) -> list[dict]:
+    """제목 부분일치 검색(이름으로 장소 추가하는 실사용 흐름). 좌표 있는 장소만."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM places WHERE title LIKE ? "
+            "AND mapx IS NOT NULL AND mapy IS NOT NULL "
+            "ORDER BY length(title), title LIMIT ?",
+            (f"%{q}%", int(limit)),
+        ).fetchall()
+        return [_row_to_place(r) for r in rows]
+    finally:
+        conn.close()
