@@ -23,7 +23,9 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MapStyleOptions
+import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
+import com.google.android.gms.maps.model.PointOfInterest
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.chip.Chip
@@ -78,6 +80,13 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var recoAdapter: RecoAdapter
     private var recoJob: Job? = null
 
+    private val selectedMarkers = HashMap<Long, Marker>()      // 담긴 장소(코럴 핀)
+    private val nearbyMarkers = HashMap<Marker, PlaceResult>()  // 주변 추천(그린 핀)
+    private lateinit var placeInfo: View
+    private lateinit var infoTitle: TextView
+    private lateinit var infoMeta: TextView
+    private lateinit var infoAdd: MaterialButton
+
     private val searchLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -119,6 +128,13 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         }
         findViewById<View>(R.id.reco_close).setOnClickListener { recoPanel.visibility = View.GONE }
 
+        // 장소 탭 정보 카드
+        placeInfo = findViewById(R.id.place_info)
+        infoTitle = findViewById(R.id.info_title)
+        infoMeta = findViewById(R.id.info_meta)
+        infoAdd = findViewById(R.id.info_add)
+        findViewById<View>(R.id.info_close).setOnClickListener { hidePlaceInfo() }
+
         val modeGroup = findViewById<MaterialButtonToggleGroup>(R.id.mode_group)
         modeGroup.check(R.id.btn_mode_auto)
         modeGroup.addOnButtonCheckedListener { _, checkedId, isChecked ->
@@ -148,7 +164,16 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(37.5665, 126.9780), 13f))
         // 지도를 옮길 때마다 그 지역 명소를 추천
         googleMap.setOnCameraIdleListener { refreshReco() }
-        renderMarkers()
+        // 핀 탭 → 정보 카드(네이버지도식). 지도의 명소 라벨 탭도 여백 DB에서 찾아 카드로.
+        googleMap.setOnMarkerClickListener { marker ->
+            val p = nearbyMarkers[marker]
+            if (p != null) { showPlaceInfo(p); true } else false
+        }
+        googleMap.setOnPoiClickListener { poi -> handlePoiTap(poi) }
+        googleMap.setOnMapClickListener { hidePlaceInfo() }
+        // 구성 변경 등으로 이미 담긴 장소가 있으면 마커 복원
+        selectedStops.forEach { (id, stop) -> addSelectedMarker(id, stop) }
+        fitCameraToSelected()
         refreshReco()
     }
 
@@ -164,7 +189,9 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
                 val res = YeobaekClient.api.nearbyPlaces(center.latitude, center.longitude, radius)
                 val fresh = res.results.filter { !selectedStops.containsKey(it.contentId) }
                 recoAdapter.submit(fresh)
-                recoPanel.visibility = if (fresh.isEmpty()) View.GONE else View.VISIBLE
+                if (placeInfo.visibility != View.VISIBLE)
+                    recoPanel.visibility = if (fresh.isEmpty()) View.GONE else View.VISIBLE
+                renderNearbyMarkers(fresh)
             } catch (e: Exception) {
                 // 추천은 부가 기능 — 실패 시 조용히 숨김
                 recoPanel.visibility = View.GONE
@@ -172,10 +199,54 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
+    /** 주변 추천 장소를 그린 핀으로 지도에 표시(탭하면 정보 카드). */
+    private fun renderNearbyMarkers(list: List<PlaceResult>) {
+        val gmap = map ?: return
+        nearbyMarkers.keys.forEach { it.remove() }
+        nearbyMarkers.clear()
+        for (p in list) {
+            val lat = p.lat ?: continue
+            val lng = p.lng ?: continue
+            val m = gmap.addMarker(
+                MarkerOptions().position(LatLng(lat, lng)).title(p.title)
+                    .icon(BitmapDescriptorFactory.defaultMarker(153f))   // 브랜드 그린
+            ) ?: continue
+            nearbyMarkers[m] = p
+        }
+    }
+
     private fun addFromReco(place: PlaceResult) {
         addStop(place.contentId, Stop(place.title, place.lat ?: Double.NaN, place.lng ?: Double.NaN))
         Toast.makeText(this, "‘${place.title}’ 플래너에 담았어요", Toast.LENGTH_SHORT).show()
-        refreshReco()   // 방금 담은 항목은 추천에서 제외
+    }
+
+    /** 지도 명소 라벨(구글 POI) 탭 → 여백 DB에서 이름으로 찾아 정보 카드. */
+    private fun handlePoiTap(poi: PointOfInterest) {
+        val name = poi.name.replace("\n", " ").trim()
+        lifecycleScope.launch {
+            try {
+                val hit = YeobaekClient.api.searchPlaces(name, 1).results.firstOrNull()
+                if (hit != null) showPlaceInfo(hit)
+                else Toast.makeText(this@YeobaekHomeActivity,
+                    "‘$name’은 여백 목록에 없어요", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) { /* 부가 기능 — 조용히 무시 */ }
+        }
+    }
+
+    private fun showPlaceInfo(place: PlaceResult) {
+        infoTitle.text = place.title
+        val dist = place.distKm?.let { "%.1fkm".format(it) }
+        infoMeta.text = listOfNotNull(place.catLabel, dist, place.addr).joinToString(" · ")
+        val already = selectedStops.containsKey(place.contentId)
+        infoAdd.text = if (already) "담김" else "＋ 담기"
+        infoAdd.isEnabled = !already
+        infoAdd.setOnClickListener { addFromReco(place); hidePlaceInfo() }
+        recoPanel.visibility = View.GONE
+        placeInfo.visibility = View.VISIBLE
+    }
+
+    private fun hidePlaceInfo() {
+        placeInfo.visibility = View.GONE
     }
 
     /** 보이는 지도 범위(중심→모서리)로 추천 반경(km)을 정한다. */
@@ -231,8 +302,17 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
             Toast.makeText(this, "이미 추가된 장소예요", Toast.LENGTH_SHORT).show(); return
         }
         selectedStops[id] = stop
+        addSelectedMarker(id, stop)
+        fitCameraToSelected()
         refreshChips()
-        renderMarkers()
+        refreshReco()   // 담은 장소는 주변 추천/핀에서 제외
+    }
+
+    private fun removeStop(id: Long) {
+        selectedStops.remove(id)
+        selectedMarkers.remove(id)?.remove()
+        refreshChips()
+        refreshReco()
     }
 
     private fun refreshChips() {
@@ -242,31 +322,30 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
             val chip = Chip(this).apply {
                 text = stop.title
                 isCloseIconVisible = true
-                setOnCloseIconClickListener {
-                    selectedStops.remove(id); refreshChips(); renderMarkers()
-                }
+                setOnCloseIconClickListener { removeStop(id) }
             }
             chipGroup.addView(chip)
         }
     }
 
-    /** 선택 장소를 그린 마커로 그리고 카메라를 담긴 좌표에 맞춘다. */
-    private fun renderMarkers() {
+    /** 담은 장소 마커(코럴). 이미 있으면 스킵. */
+    private fun addSelectedMarker(id: Long, stop: Stop) {
         val gmap = map ?: return
-        gmap.clear()
-        val pts = ArrayList<LatLng>()
-        for (stop in selectedStops.values) {
-            if (!stop.hasLatLng) continue
-            val pos = LatLng(stop.lat, stop.lng)
-            pts.add(pos)
-            gmap.addMarker(
-                MarkerOptions().position(pos).title(stop.title)
-                    .icon(BitmapDescriptorFactory.defaultMarker(153f))  // 브랜드 그린
-            )
-        }
+        if (!stop.hasLatLng || selectedMarkers.containsKey(id)) return
+        val m = gmap.addMarker(
+            MarkerOptions().position(LatLng(stop.lat, stop.lng)).title(stop.title)
+                .icon(BitmapDescriptorFactory.defaultMarker(12f))   // 코럴(담은 장소)
+        )
+        if (m != null) selectedMarkers[id] = m
+    }
+
+    /** 담은 장소들이 다 보이도록 카메라를 맞춘다. */
+    private fun fitCameraToSelected() {
+        val gmap = map ?: return
+        val pts = selectedStops.values.filter { it.hasLatLng }.map { LatLng(it.lat, it.lng) }
         when (pts.size) {
             0 -> Unit
-            1 -> gmap.animateCamera(CameraUpdateFactory.newLatLngZoom(pts[0], 14f))
+            1 -> gmap.animateCamera(CameraUpdateFactory.newLatLngZoom(pts[0], 15f))
             else -> {
                 val b = LatLngBounds.Builder().apply { pts.forEach { include(it) } }.build()
                 gmap.animateCamera(CameraUpdateFactory.newLatLngBounds(b, 160))
