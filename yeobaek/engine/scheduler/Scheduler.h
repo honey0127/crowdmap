@@ -68,8 +68,11 @@ public:
         : provider(provider), speedKmh(avgSpeedKmh), dMaxKm(dMaxKm),
           highLevel(highCongestionLevel) {}
 
+    // keepOrder=true 면 재정렬하지 않고 "사용자가 고른 순서 그대로" 평가한다.
+    //   → 사용자가 짠 플랜대로 가되, 각 stop 의 도착시점 예보만 채워준다.
+    //   (allowSubstitution 이 함께 true 면 고혼잡 stop 만 감성 쌍둥이로 스왑)
     Plan optimize(const std::vector<SchedStop>& stops, long startUnix,
-                  SchedWeights w, bool allowSubstitution) {
+                  SchedWeights w, bool allowSubstitution, bool keepOrder = false) {
         Plan best;
         const int n = static_cast<int>(stops.size());
         if (n == 0) return best;
@@ -81,7 +84,10 @@ public:
         std::vector<int> bestOrder;
         Plan bestPlan;
 
-        if (n <= 8) {
+        if (keepOrder) {
+            // 재정렬 없이 입력 순서 그대로 평가(치환은 옵션).
+            bestPlan = evaluate(stops, order, startUnix, w, allowSubstitution);
+        } else if (n <= 8) {
             // 완전탐색: 모든 방문 순서
             std::vector<int> perm = order;
             std::sort(perm.begin(), perm.end());

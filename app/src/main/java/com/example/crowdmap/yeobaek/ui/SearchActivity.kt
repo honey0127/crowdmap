@@ -71,6 +71,8 @@ class SearchActivity : AppCompatActivity() {
         setResult(RESULT_OK, Intent().apply {
             putExtra(Extras.PLACE_ID, place.contentId)
             putExtra(Extras.PLACE_TITLE, place.title)
+            putExtra(Extras.PLACE_LAT, place.lat ?: Double.NaN)
+            putExtra(Extras.PLACE_LNG, place.lng ?: Double.NaN)
         })
         finish()
     }

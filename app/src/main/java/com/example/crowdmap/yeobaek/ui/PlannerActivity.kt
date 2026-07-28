@@ -24,6 +24,7 @@ class PlannerActivity : AppCompatActivity() {
 
         val stops = intent.getLongArrayExtra(Extras.STOPS) ?: LongArray(0)
         val startTime = intent.getStringExtra(Extras.START_TIME) ?: ""
+        val keepOrder = intent.getBooleanExtra(Extras.KEEP_ORDER, false)
         val planJson = intent.getStringExtra(Extras.PLAN_JSON)
         val plan: ScheduleResponse? =
             planJson?.let { YeobaekClient.gson.fromJson(it, ScheduleResponse::class.java) }
@@ -39,8 +40,13 @@ class PlannerActivity : AppCompatActivity() {
             return
         }
 
-        saved.text = "혼잡 ${plan.savedCongestionPct}% 절약"
-        sub.text = "${plan.ordered.size}곳 · 최적 비용 ${round2(plan.totalCost)}"
+        if (keepOrder) {
+            saved.text = "내 순서대로 코스"
+            sub.text = "${plan.ordered.size}곳 · 고른 순서 유지 · 도착 시점 혼잡도 표시"
+        } else {
+            saved.text = "혼잡 ${plan.savedCongestionPct}% 절약"
+            sub.text = "${plan.ordered.size}곳 · 혼잡도 예측으로 순서 자동 조정"
+        }
         recycler.adapter = PlanAdapter(plan.ordered) { stop ->
             openAlternatives(stop, stops, startTime)
         }

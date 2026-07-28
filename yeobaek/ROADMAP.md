@@ -18,7 +18,8 @@
 | FastAPI 3 엔드포인트 | Phase 3 | ✅ 완료·검증 | TestClient E2E |
 | RAG 카드(템플릿+LLM) | 3-3 | 🟡 코드 완료 | 템플릿 검증 완료, LLM 경로는 키 필요 |
 | 데이터 스크립트 | Phase 1 | 🟡 규격검증 완료 | KorService2 필드·파라미터 실측 정합 확인, 대량 수집 실행은 로컬 |
-| Android 3화면 | Phase 4 | 🟡 코드 작성 | 홈/플래너/대안/카드 + Retrofit 구현, **Android Studio 빌드·기기 테스트 필요** |
+| Android 화면 | Phase 4 | 🟡 코드 작성 | 홈(**지도+검색+2모드**)/플래너/대안/카드 + Retrofit, **Android Studio 빌드·기기 테스트 필요** |
+| 홈 지도(구글맵) + 코스 2모드 | Phase 4 | 🟡 코드 작성 | 풀스크린 지도·그린 마커·`자동최적화/내순서대로` 토글(`keep_order`) |
 | 모듈4 실시간 스왑 | 4-5 | 🟡 카드 스왑만 | 카드 원탭 스왑→재스케줄 구현, 실시간 급증 감시(`router.resolve_now`)는 미완 |
 | 통합·안정화·기능설명서 | Phase 5 | 🟡 일부 | 해시태그 매핑/README 착수, valgrind·시연 고정 미완 |
 
@@ -65,11 +66,15 @@
 - [ ] `build_embeddings.py` → `embeddings.npy` 생성(최초 e5 다운로드).
 - [ ] 실데이터로 `/match`·`/schedule`·`/card` 스모크(키 세팅 후 예보 실제 반영 확인).
 
-### 🟠 P1 — Android 3화면 + 연동 (Phase 4) — **코드 작성 완료, 빌드 검증 필요**
+### 🟠 P1 — Android 화면 + 연동 (Phase 4) — **코드 작성 완료, 빌드 검증 필요**
 - [x] 홈(출발시각/방문지 → `/schedule`), 플래너(타임라인·혼잡 배지·"대안 보기"→`/match`), 대안목록, 대안카드(`/card` 근거 + 원탭 스왑→재스케줄). `app/.../yeobaek/`
+- [x] **홈 = 풀스크린 구글맵**(`ye_map_style.json` 그린 톤) + 떠 있는 검색바 + 하단 시트. 담은 장소가 그린 마커로 표시(카메라 자동 맞춤). 기존 CrowdMap 지도 키 재사용.
+- [x] **코스 2모드**: `자동 최적화`(혼잡도로 순서 재배치) / `내 순서대로`(`keep_order=true`, 고른 순서 유지·도착시점 예보만). 엔진·pybind·API·앱 토글까지 관통.
+- [x] 승인 시안 팔레트 반영(브랜드 그린 `#0FB86B`, 페이퍼, 혼잡 히트 스케일).
 - [x] Retrofit2 + Gson + Coroutines(`lifecycleScope`), 로딩/에러 Toast.
 - [ ] **Android Studio 최초 빌드**(Gradle sync·의존성 해결) + 실기기/에뮬레이터 실행 검증.
 - [ ] `local.properties` `SERVER_IP` 설정, uvicorn `--host 0.0.0.0`. (필요 시 서버 CORS)
+- [ ] (선택) 구글맵 API 키가 만료/미설정이면 `AndroidManifest.xml` `com.google.android.geo.API_KEY` 갱신.
 
 ### 🟡 P2 — 모듈4 실시간 스왑 (Phase 4-5)
 - [ ] CrowdMap `TrackingCore`(Foreground Service) 재활용 → 다음 장소 실시간 급증 감지 시 `router.resolve_now`로 스왑 제안·푸시.

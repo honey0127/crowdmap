@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 바텀시트 배경: 상단만 둥근 페이퍼 서페이스(테이블링 시트 느낌) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/ye_surface" />
+    <corners
+        android:topLeftRadius="28dp"
+        android:topRightRadius="28dp" />
+</shape>

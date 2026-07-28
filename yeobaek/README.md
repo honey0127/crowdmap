@@ -69,9 +69,16 @@ uvicorn server.main:app --reload
 
 ### 4) Android 앱 (홈→플래너→대안카드, Phase 4)
 CrowdMap 앱 모듈(`app/`)에 여백 화면들을 **별도 런처("여백")** 로 추가했다(기존 CrowdMap 런처 무영향).
-- **디자인**: Material 3 테마(`Theme.Yeobaek`, 차분한 종이톤+세이지 그린), 카드/칩 기반.
-- 흐름: `홈`(날짜·시간 피커 + **이름으로 장소 검색·칩 추가**) → `SearchActivity`(`/places/search`) → `/schedule`
-  → `Planner`(타임라인 카드·혼잡 배지, 고혼잡 "대안 보기" → `/match`) → `Alternatives`(감성 쌍둥이 카드)
+- **디자인**(승인 시안, 네이버지도×테이블링): `Theme.Yeobaek` — 브랜드 그린 `#0FB86B`,
+  페이퍼 화이트 `#F7F6F2`, 혼잡 시맨틱 히트 스케일(여유#2E9E5B→붐빔#DB4437).
+- **홈 = 풀스크린 지도**: 구글맵(`ye_map_style.json` 그린 톤) + 떠 있는 검색바 + 하단 시트.
+  검색으로 담은 장소가 **그린 마커**로 지도에 바로 표시되고 카메라가 자동으로 맞춰진다.
+  - 구글맵은 기존 CrowdMap 이 쓰던 `com.google.android.geo.API_KEY` 를 그대로 재사용(새 키 불필요).
+- **코스 방식 2모드**(하단 시트 토글):
+  - `자동 최적화` — 혼잡도를 예측해 방문 순서를 재배치(`/schedule` 기본).
+  - `내 순서대로` — 내가 고른 순서를 유지하고 도착 시점 혼잡도만 채운다(`keep_order=true`).
+- 흐름: `홈` → `SearchActivity`(`/places/search`, 좌표 포함) → `/schedule`
+  → `Planner`(타임라인 카드·혼잡 배지, 모드별 헤더, 고혼잡 "대안 보기" → `/match`) → `Alternatives`(감성 쌍둥이)
   → `Card`(`/card` 근거 + **원탭 스왑 → 재스케줄**)
 - 네트워킹: Retrofit2 + Gson + Coroutines(`lifecycleScope`), 디바운스 검색, 로딩/에러 처리.
 - 실행: Android Studio 로 열고(Gradle sync) 실기기/에뮬레이터에서 "여백" 아이콘 실행.
@@ -88,9 +95,10 @@ CrowdMap 앱 모듈(`app/`)에 여백 화면들을 **별도 런처("여백")** �
 ## API (부록 B)
 
 - `POST /api/v1/match` — `content_id` → 반경 후보(C++) → numpy 코사인 → 감성 쌍둥이 top-K(+예보 혼잡도)
-- `POST /api/v1/schedule` — `start_time`+`stops`+`weights` → 시간의존 최적 코스, 절약 혼잡도 %
+- `POST /api/v1/schedule` — `start_time`+`stops`+`weights`(+`keep_order`) → 코스.
+  `keep_order=false`(기본)=시간의존 최적 재배치, `true`=고른 순서 유지(도착시점 예보만).
 - `POST /api/v1/card` — `source_id`,`alt_id` → 설득 카드. **수치는 코드가 계산, LLM 은 문장만(결정 G)**
-- `GET  /api/v1/places/search?q=` — 이름 부분일치 검색(+cat_label). 앱에서 방문지 추가용.
+- `GET  /api/v1/places/search?q=` — 이름 부분일치 검색(+cat_label, **lat/lng**). 앱 홈 지도 마커용.
 
 ---
 

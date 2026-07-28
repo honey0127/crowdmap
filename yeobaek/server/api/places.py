@@ -27,6 +27,8 @@ def search(q: str = Query(..., min_length=1, description="장소명 부분일치
                 "title": p["title"],
                 "addr": p.get("addr"),
                 "cat_label": cat_label(_deepest_cat(p.get("cat"))),
+                "lat": p.get("lat"),   # 지도 마커용(홈 화면)
+                "lng": p.get("lng"),
             }
             for p in rows
         ]

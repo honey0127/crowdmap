@@ -1,143 +1,218 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 홈(재설계): 네이버지도식 풀스크린 지도 + 떠 있는 검색바 + 하단 시트(테이블링). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:background="@color/ye_background">
 
-    <LinearLayout
+    <!-- 지도(구글맵, ye_map_style 로 그린 톤) -->
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/map_fragment"
+        android:name="com.google.android.gms.maps.SupportMapFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 상단 떠 있는 검색바 -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/search_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="20dp">
+        android:layout_gravity="top"
+        android:layout_marginTop="16dp"
+        android:layout_marginHorizontal="16dp"
+        android:clickable="true"
+        android:focusable="true"
+        app:cardCornerRadius="28dp"
+        app:cardElevation="6dp"
+        app:cardBackgroundColor="@color/ye_surface">
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="20dp"
+            android:paddingVertical="15dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔍"
+                android:textSize="16sp"
+                android:layout_marginEnd="12dp" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="어디를 둘러볼까요? 명소·장소 검색"
+                android:textColor="@color/ye_on_surface_variant"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="여백"
+                android:textColor="@color/ye_primary"
+                android:textStyle="bold"
+                android:textSize="15sp" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- 하단 시트: 날짜·시간 + 선택 장소 + 모드 + CTA -->
+    <LinearLayout
+        android:id="@+id/bottom_sheet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:background="@drawable/ye_sheet_bg"
+        android:elevation="12dp"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="22dp">
+
+        <View
+            android:layout_width="40dp"
+            android:layout_height="5dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="14dp"
+            android:background="@drawable/ye_handle" />
+
+        <!-- 날짜 / 시간 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_date"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                app:boxCornerRadiusTopStart="14dp"
+                app:boxCornerRadiusTopEnd="14dp"
+                app:boxCornerRadiusBottomStart="14dp"
+                app:boxCornerRadiusBottomEnd="14dp"
+                android:hint="날짜">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/input_date"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:focusable="false"
+                    android:clickable="true"
+                    android:inputType="none" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_time"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                app:boxCornerRadiusTopStart="14dp"
+                app:boxCornerRadiusTopEnd="14dp"
+                app:boxCornerRadiusBottomStart="14dp"
+                app:boxCornerRadiusBottomEnd="14dp"
+                android:hint="출발 시각">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/input_time"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:focusable="false"
+                    android:clickable="true"
+                    android:inputType="none" />
+            </com.google.android.material.textfield.TextInputLayout>
+        </LinearLayout>
+
+        <!-- 선택한 장소 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="여백"
-            style="@style/Ye.Title" />
+            android:layout_marginTop="14dp"
+            android:text="선택한 장소"
+            style="@style/Ye.Section" />
 
         <TextView
+            android:id="@+id/stops_empty"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="같은 감성, 덜 붐비는 시간·장소로"
+            android:text="검색바에서 방문할 장소를 담아보세요"
             android:textColor="@color/ye_on_surface_variant"
-            android:textSize="14sp" />
+            android:textSize="13sp" />
 
-        <!-- 언제 -->
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chip_group"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            app:chipSpacingVertical="2dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_add_place"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:paddingHorizontal="4dp"
+            android:text="＋ 장소 추가" />
+
+        <!-- 모드: 자동 최적화 / 내 순서대로 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:text="언제 떠나시나요"
+            android:layout_marginTop="10dp"
+            android:text="코스 방식"
             style="@style/Ye.Section" />
 
-        <com.google.android.material.card.MaterialCardView
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/mode_group"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            app:cardElevation="0dp"
-            app:cardBackgroundColor="@color/ye_surface"
-            app:strokeColor="@color/ye_outline"
-            app:strokeWidth="1dp"
-            app:cardCornerRadius="16dp">
+            android:layout_marginTop="6dp"
+            app:singleSelection="true"
+            app:selectionRequired="true">
 
-            <LinearLayout
-                android:layout_width="match_parent"
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_mode_auto"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:padding="8dp">
+                android:text="자동 최적화"
+                app:cornerRadius="14dp" />
 
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_date"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:hint="날짜">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_mode_keep"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="내 순서대로"
+                app:cornerRadius="14dp" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/input_date"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:focusable="false"
-                        android:clickable="true"
-                        android:inputType="none" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_time"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:hint="시간">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/input_time"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:focusable="false"
-                        android:clickable="true"
-                        android:inputType="none" />
-                </com.google.android.material.textfield.TextInputLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- 어디 -->
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="어디를 둘러볼까요"
-            style="@style/Ye.Section" />
-
-        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/mode_hint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            app:cardElevation="0dp"
-            app:cardBackgroundColor="@color/ye_surface"
-            app:strokeColor="@color/ye_outline"
-            app:strokeWidth="1dp"
-            app:cardCornerRadius="16dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <TextView
-                    android:id="@+id/stops_empty"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="아직 추가한 장소가 없어요"
-                    android:textColor="@color/ye_on_surface_variant"
-                    android:textSize="14sp" />
-
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/chip_group"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_add_place"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="＋ 장소 추가" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+            android:layout_marginTop="6dp"
+            android:text="혼잡도를 예측해 방문 순서를 자동으로 조정해요"
+            android:textColor="@color/ye_on_surface_variant"
+            android:textSize="12sp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_plan"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:layout_marginTop="32dp"
+            android:layout_height="54dp"
+            android:layout_marginTop="14dp"
             android:text="코스 만들기"
             android:textSize="16sp"
             app:cornerRadius="16dp" />
@@ -147,7 +222,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:layout_marginTop="20dp"
-            android:visibility="gone" />
+            android:layout_marginTop="12dp"
+            android:visibility="gone"
+            tools:visibility="visible" />
     </LinearLayout>
-</ScrollView>
+</FrameLayout>

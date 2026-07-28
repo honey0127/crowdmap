@@ -131,5 +131,6 @@ PYBIND11_MODULE(yeobaek_engine, m) {
         .def("optimize", &Scheduler::optimize,
              py::arg("stops"), py::arg("start_unix"), py::arg("weights"),
              py::arg("allow_substitution") = true,
+             py::arg("keep_order") = false,   // 사용자가 고른 순서 유지(재정렬 X)
              py::call_guard<py::gil_scoped_release>());
 }

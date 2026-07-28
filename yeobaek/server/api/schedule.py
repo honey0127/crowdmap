@@ -24,6 +24,9 @@ class ScheduleRequest(BaseModel):
     stops: list[int] = Field(min_length=1, max_length=8)
     weights: Weights = Weights()
     allow_substitution: bool = True
+    # keep_order=True → 사용자가 고른 순서 그대로 진행(재정렬 X, 도착시점 예보만 채움).
+    #   앱의 "내 순서대로" 모드. False 면 혼잡도 예측으로 순서를 자동 재배치.
+    keep_order: bool = False
 
 
 @router.post("/schedule")
@@ -60,7 +63,8 @@ def schedule(req: ScheduleRequest) -> dict:
 
     weights = engine_state.weights(
         req.weights.congestion, req.weights.distance, req.weights.similarity)
-    plan = engine_state.optimize(sched_stops, start_unix, weights, req.allow_substitution)
+    plan = engine_state.optimize(sched_stops, start_unix, weights,
+                                 req.allow_substitution, req.keep_order)
 
     # content_id → title (원본 + 치환 후보 모두 필요)
     all_ids = set(req.stops)

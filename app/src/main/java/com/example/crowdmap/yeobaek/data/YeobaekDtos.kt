@@ -18,6 +18,8 @@ data class ScheduleRequest(
     val stops: List<Long>,
     val weights: Weights = Weights(),
     @SerializedName("allow_substitution") val allowSubstitution: Boolean = true,
+    // keepOrder=true → 내가 고른 순서 그대로. false → 혼잡도 예측으로 자동 재배치.
+    @SerializedName("keep_order") val keepOrder: Boolean = false,
 )
 
 data class PlanStop(
@@ -89,6 +91,8 @@ data class PlaceResult(
     val title: String,
     val addr: String? = null,
     @SerializedName("cat_label") val catLabel: String? = null,
+    val lat: Double? = null,   // 지도 마커용
+    val lng: Double? = null,
 )
 
 data class SearchResponse(val results: List<PlaceResult>)
@@ -98,13 +102,13 @@ object Congestion {
     fun label(level: Int): String = when (level) {
         1 -> "여유"; 2 -> "보통"; 3 -> "약간 붐빔"; 4 -> "붐빔"; else -> "보통"
     }
-    /** 배지 배경 색상(ARGB). */
+    /** 배지 배경 색상(ARGB) — 시맨틱 히트 스케일(여유→붐빔). */
     fun color(level: Int): Int = when (level) {
-        1 -> 0xFF2E7D32.toInt()  // green
-        2 -> 0xFF1565C0.toInt()  // blue
-        3 -> 0xFFEF6C00.toInt()  // orange
-        4 -> 0xFFC62828.toInt()  // red
-        else -> 0xFF616161.toInt()
+        1 -> 0xFF2E9E5B.toInt()  // 여유
+        2 -> 0xFFE0A11B.toInt()  // 보통
+        3 -> 0xFFF0682B.toInt()  // 약간 붐빔
+        4 -> 0xFFDB4437.toInt()  // 붐빔
+        else -> 0xFF8A8F8B.toInt()
     }
     fun isHigh(level: Int): Boolean = level >= 3
 }

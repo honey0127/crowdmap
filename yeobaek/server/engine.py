@@ -91,8 +91,10 @@ class EngineState:
     def weights(self, congestion: float, distance: float, similarity: float):
         return ye.SchedWeights(congestion, distance, similarity)
 
-    def optimize(self, stops, start_unix: int, weights, allow_substitution: bool):
-        return self.scheduler.optimize(stops, int(start_unix), weights, allow_substitution)
+    def optimize(self, stops, start_unix: int, weights, allow_substitution: bool,
+                 keep_order: bool = False):
+        return self.scheduler.optimize(
+            stops, int(start_unix), weights, allow_substitution, keep_order)
 
 
 engine_state = EngineState()
