@@ -4,11 +4,21 @@
 서버 부팅 시 all_places() 로 C++ SpatialIndex 를 적재한다.
 """
 from __future__ import annotations
+import math
 import sqlite3
 from pathlib import Path
 from typing import Iterable, Optional
 
 from ..config import settings
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    r = 6371.0088
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
 def _connect() -> sqlite3.Connection:
@@ -99,6 +109,28 @@ def get_area_map(ids: Iterable[int]) -> dict[int, tuple[str, float]]:
 def get_area_name(content_id: int) -> Optional[str]:
     m = get_area_map([content_id])
     return m[content_id][0] if content_id in m else None
+
+
+def nearby_places(lat: float, lng: float, radius_km: float = 3.0,
+                  limit: int = 12) -> list[dict]:
+    """좌표 반경 내 장소를 가까운 순으로. 지도 이동 시 '이 지역 추천'에 사용.
+    데이터가 소규모(수백 건)라 전체 스캔 후 haversine 정렬로 충분하다."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM places WHERE mapx IS NOT NULL AND mapy IS NOT NULL"
+        ).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for r in rows:
+        d = _haversine_km(lat, lng, r["mapy"], r["mapx"])
+        if d <= radius_km:
+            p = _row_to_place(r)
+            p["dist_km"] = round(d, 2)
+            out.append(p)
+    out.sort(key=lambda p: p["dist_km"])
+    return out[:limit]
 
 
 def search_places(q: str, limit: int = 20) -> list[dict]:

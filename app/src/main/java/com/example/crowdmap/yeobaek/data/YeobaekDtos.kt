@@ -93,6 +93,7 @@ data class PlaceResult(
     @SerializedName("cat_label") val catLabel: String? = null,
     val lat: Double? = null,   // 지도 마커용
     val lng: Double? = null,
+    @SerializedName("dist_km") val distKm: Double? = null,  // 지역 추천 거리
 )
 
 data class SearchResponse(val results: List<PlaceResult>)

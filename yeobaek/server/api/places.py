@@ -16,20 +16,30 @@ def _deepest_cat(cat: str | None) -> str | None:
     return parts[-1] if parts else None
 
 
+def _to_result(p: dict) -> dict:
+    return {
+        "content_id": p["content_id"],
+        "title": p["title"],
+        "addr": p.get("addr"),
+        "cat_label": cat_label(_deepest_cat(p.get("cat"))),
+        "lat": p.get("lat"),      # 지도 마커용(홈 화면)
+        "lng": p.get("lng"),
+        "dist_km": p.get("dist_km"),
+    }
+
+
 @router.get("/places/search")
 def search(q: str = Query(..., min_length=1, description="장소명 부분일치"),
            limit: int = Query(20, ge=1, le=50)) -> dict:
     rows = repository.search_places(q, limit)
-    return {
-        "results": [
-            {
-                "content_id": p["content_id"],
-                "title": p["title"],
-                "addr": p.get("addr"),
-                "cat_label": cat_label(_deepest_cat(p.get("cat"))),
-                "lat": p.get("lat"),   # 지도 마커용(홈 화면)
-                "lng": p.get("lng"),
-            }
-            for p in rows
-        ]
-    }
+    return {"results": [_to_result(p) for p in rows]}
+
+
+@router.get("/places/nearby")
+def nearby(lat: float = Query(..., description="지도 중심 위도"),
+           lng: float = Query(..., description="지도 중심 경도"),
+           radius_km: float = Query(3.0, ge=0.2, le=20.0),
+           limit: int = Query(12, ge=1, le=30)) -> dict:
+    """지도 이동 시 '이 지역 추천' — 중심 좌표 반경 내 명소를 가까운 순으로."""
+    rows = repository.nearby_places(lat, lng, radius_km, limit)
+    return {"results": [_to_result(p) for p in rows]}

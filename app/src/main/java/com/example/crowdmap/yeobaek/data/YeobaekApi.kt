@@ -21,4 +21,13 @@ interface YeobaekApi {
         @Query("q") q: String,
         @Query("limit") limit: Int = 20,
     ): SearchResponse
+
+    // 지도 이동 시 '이 지역 추천'
+    @GET("api/v1/places/nearby")
+    suspend fun nearbyPlaces(
+        @Query("lat") lat: Double,
+        @Query("lng") lng: Double,
+        @Query("radius_km") radiusKm: Double = 3.0,
+        @Query("limit") limit: Int = 12,
+    ): SearchResponse
 }

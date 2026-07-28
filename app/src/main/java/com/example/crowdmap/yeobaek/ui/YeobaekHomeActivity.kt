@@ -9,7 +9,10 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.crowdmap.R
+import com.example.crowdmap.yeobaek.data.PlaceResult
 import com.example.crowdmap.yeobaek.data.ScheduleRequest
 import com.example.crowdmap.yeobaek.data.YeobaekClient
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -29,7 +32,14 @@ import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.timepicker.MaterialTimePicker
 import com.google.android.material.timepicker.TimeFormat
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.asin
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -64,6 +74,10 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var planButton: MaterialButton
     private lateinit var modeHint: TextView
 
+    private lateinit var recoPanel: View
+    private lateinit var recoAdapter: RecoAdapter
+    private var recoJob: Job? = null
+
     private val searchLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -95,6 +109,16 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         findViewById<MaterialButton>(R.id.btn_add_place).setOnClickListener(openSearch)
         planButton.setOnClickListener { requestSchedule() }
 
+        // 지역 추천 패널
+        recoPanel = findViewById(R.id.reco_panel)
+        recoAdapter = RecoAdapter { place -> addFromReco(place) }
+        findViewById<RecyclerView>(R.id.reco_list).apply {
+            layoutManager = LinearLayoutManager(
+                this@YeobaekHomeActivity, LinearLayoutManager.HORIZONTAL, false)
+            adapter = recoAdapter
+        }
+        findViewById<View>(R.id.reco_close).setOnClickListener { recoPanel.visibility = View.GONE }
+
         val modeGroup = findViewById<MaterialButtonToggleGroup>(R.id.mode_group)
         modeGroup.check(R.id.btn_mode_auto)
         modeGroup.addOnButtonCheckedListener { _, checkedId, isChecked ->
@@ -121,8 +145,54 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         }
         googleMap.uiSettings.isMapToolbarEnabled = false
         // 기본 시점: 서울 중심
-        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(37.5665, 126.9780), 11f))
+        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(37.5665, 126.9780), 13f))
+        // 지도를 옮길 때마다 그 지역 명소를 추천
+        googleMap.setOnCameraIdleListener { refreshReco() }
         renderMarkers()
+        refreshReco()
+    }
+
+    /** 현재 지도 중심 주변 명소를 추천 패널에 채운다(디바운스). */
+    private fun refreshReco() {
+        val gmap = map ?: return
+        val center = gmap.cameraPosition.target
+        val radius = radiusKmFromMap(gmap)
+        recoJob?.cancel()
+        recoJob = lifecycleScope.launch {
+            delay(450)   // 카메라가 멈춘 뒤에만 요청(스팸 방지)
+            try {
+                val res = YeobaekClient.api.nearbyPlaces(center.latitude, center.longitude, radius)
+                val fresh = res.results.filter { !selectedStops.containsKey(it.contentId) }
+                recoAdapter.submit(fresh)
+                recoPanel.visibility = if (fresh.isEmpty()) View.GONE else View.VISIBLE
+            } catch (e: Exception) {
+                // 추천은 부가 기능 — 실패 시 조용히 숨김
+                recoPanel.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun addFromReco(place: PlaceResult) {
+        addStop(place.contentId, Stop(place.title, place.lat ?: Double.NaN, place.lng ?: Double.NaN))
+        Toast.makeText(this, "‘${place.title}’ 플래너에 담았어요", Toast.LENGTH_SHORT).show()
+        refreshReco()   // 방금 담은 항목은 추천에서 제외
+    }
+
+    /** 보이는 지도 범위(중심→모서리)로 추천 반경(km)을 정한다. */
+    private fun radiusKmFromMap(gmap: GoogleMap): Double {
+        val c = gmap.cameraPosition.target
+        val ne = gmap.projection.visibleRegion.latLngBounds.northeast
+        val d = haversineKm(c.latitude, c.longitude, ne.latitude, ne.longitude)
+        return d.coerceIn(0.6, 12.0)
+    }
+
+    private fun haversineKm(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+        val r = 6371.0088
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLng = Math.toRadians(lng2 - lng1)
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+            cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLng / 2) * sin(dLng / 2)
+        return 2 * r * asin(min(1.0, sqrt(a)))
     }
 
     private fun pickDate() {

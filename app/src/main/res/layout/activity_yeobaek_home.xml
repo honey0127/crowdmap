@@ -61,6 +61,58 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- 지역 추천: 지도를 옮기면 이 지역 명소를 추천, "플래너에 넣을까요?" -->
+    <LinearLayout
+        android:id="@+id/reco_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginTop="86dp"
+        android:orientation="vertical"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/ye_reco_header_bg"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="7dp">
+
+            <TextView
+                android:id="@+id/reco_header"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="이 지역 추천 · 플래너에 넣을까요?"
+                android:textColor="@color/ye_on_primary_container"
+                android:textStyle="bold"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/reco_close"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:padding="2dp"
+                android:text="✕"
+                android:textColor="@color/ye_on_primary_container"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/reco_list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:clipToPadding="false"
+            android:paddingHorizontal="16dp"
+            android:orientation="horizontal"
+            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+    </LinearLayout>
+
     <!-- 하단 시트: 날짜·시간 + 선택 장소 + 모드 + CTA -->
     <LinearLayout
         android:id="@+id/bottom_sheet"
