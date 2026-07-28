@@ -22,7 +22,9 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        manifestPlaceholders["MAPS_API_KEY"] = localProperties.getProperty("MAPS_API_KEY", "")
+        // 지도 키: local.properties 의 MAPS_API_KEY 우선, 없으면 기존 기본 키로 폴백(회귀 방지).
+        manifestPlaceholders["MAPS_API_KEY"] =
+            localProperties.getProperty("MAPS_API_KEY", "AIzaSyCzG9WISxXy7e8EZ-YCf5XtVbpSfX4V9SA")
         buildConfigField("String", "SERVER_IP",
             "\"${localProperties.getProperty("SERVER_IP", "127.0.0.1")}\"")
     }
