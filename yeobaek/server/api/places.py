@@ -56,10 +56,13 @@ class AdhocPlace(BaseModel):
 
 @router.post("/places/adhoc")
 def adhoc(body: AdhocPlace) -> dict:
-    """DB 에 없는 위치를 즉석 등록 → content_id 발급(어드혹). 최근접 예보지점도 매핑."""
+    """DB 에 없는 위치를 즉석 등록 → content_id 발급(어드혹). 서울 예보권이면 예보지점도 매핑."""
     area = engine_state.nearest_area(body.lat, body.lng)
-    area_name = area[0] if area else None
-    dist = area[1] if area else None
+    # 서울 예보권(≤4km) 밖이면 매핑 안 함 → 예보는 중립 폴백(전국 대응)
+    if area and area[1] <= 4.0:
+        area_name, dist = area[0], area[1]
+    else:
+        area_name, dist = None, None
     title = (body.title or "").strip() or "선택한 위치"
     cid = repository.insert_adhoc_place(title, body.lat, body.lng, area_name, dist)
     return {"content_id": cid, "title": title,

@@ -49,8 +49,11 @@ cd yeobaek/engine && cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build 
 cd yeobaek
 pip install -r scripts/requirements.txt
 export TOURAPI_KEY=발급키                # 한국관광공사(필수 활용)
-python scripts/collect_tourapi.py --pages 5   # places 적재(overview 없는 항목 스킵)
-python scripts/build_area_map.py              # 장소 → 서울 121 예보지점 매핑
+# 서울만:      python scripts/collect_tourapi.py --pages 5
+# 전국(17개 시·도): python scripts/collect_tourapi.py --nationwide --pages 5
+#   대량이면 --no-overview 로 소개 호출 생략(속도↑, 임베딩 품질↓)
+python scripts/collect_tourapi.py --nationwide --pages 5
+python scripts/build_area_map.py              # 서울 예보권(≤4km) 장소만 예보지점 매핑
 python scripts/build_embeddings.py            # e5-small 임베딩(L2 정규화)
 ```
 
@@ -66,6 +69,11 @@ uvicorn server.main:app --reload
 
 > `SEOUL_API_KEY` 가 없으면 예보는 **네트워크 호출 없이 중립값(보통)** 으로 폴백한다
 > (오프라인/데모 안전). 매칭·스케줄러·카드는 그대로 동작한다.
+
+> **전국 범위(중요)**: 명소·지역구·코스는 **전국**을 커버한다(TourAPI 전국 수집 + 전국 지역구).
+> 단 **도착시점 혼잡 예보**는 데이터 소스(서울 실시간 도시데이터, 121지점) 특성상 **서울만** 실측이며,
+> 서울 예보권(≤4km) 밖 장소는 예보가 **중립'보통'** 으로 폴백된다 → 서울 밖 코스는 거리/순서 위주로 최적화.
+> 전국 혼잡도까지 반영하려면 **한국관광 데이터랩(전국 관광혼잡도)** 같은 소스를 별도 모듈로 붙여야 한다(로드맵).
 
 ### 4) Android 앱 (홈→플래너→대안카드, Phase 4)
 CrowdMap 앱 모듈(`app/`)에 여백 화면들을 **별도 런처("여백")** 로 추가했다(기존 CrowdMap 런처 무영향).
