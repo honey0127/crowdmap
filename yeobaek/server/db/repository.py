@@ -111,6 +111,50 @@ def get_area_name(content_id: int) -> Optional[str]:
     return m[content_id][0] if content_id in m else None
 
 
+def add_report(kind: str, lat: float, lng: float,
+               text: Optional[str] = None, content_id: Optional[int] = None) -> int:
+    """여행자 실시간 제보 저장(크라우드소싱). 반환: report id."""
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "INSERT INTO user_reports(content_id,lat,lng,kind,text,created_at) "
+            "VALUES(?,?,?,?,?,datetime('now'))",
+            (content_id, float(lat), float(lng), kind, text),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def nearby_reports(lat: float, lng: float, radius_km: float = 3.0,
+                   limit: int = 50, max_age_hours: int = 12) -> list[dict]:
+    """반경 내 최근 제보를 최신순으로."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM user_reports "
+            "WHERE created_at >= datetime('now', ?) "
+            "ORDER BY created_at DESC",
+            (f"-{int(max_age_hours)} hours",),
+        ).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for r in rows:
+        d = _haversine_km(lat, lng, r["lat"], r["lng"])
+        if d <= radius_km:
+            out.append({
+                "id": r["id"], "content_id": r["content_id"],
+                "lat": r["lat"], "lng": r["lng"], "kind": r["kind"],
+                "text": r["text"], "created_at": r["created_at"],
+                "dist_km": round(d, 2),
+            })
+        if len(out) >= limit:
+            break
+    return out
+
+
 def insert_adhoc_place(title: str, lat: float, lng: float,
                        area_name: Optional[str] = None,
                        dist_km: Optional[float] = None) -> int:

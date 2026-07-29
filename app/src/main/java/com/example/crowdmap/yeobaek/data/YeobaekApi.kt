@@ -32,6 +32,15 @@ interface YeobaekApi {
         @Query("limit") limit: Int = 12,
     ): SearchResponse
 
+    // 주변 명소 + 현재 혼잡 레벨·한적함 지수(히트맵/핀 색)
+    @GET("api/v1/places/heatmap")
+    suspend fun heatmap(
+        @Query("lat") lat: Double,
+        @Query("lng") lng: Double,
+        @Query("radius_km") radiusKm: Double = 3.0,
+        @Query("limit") limit: Int = 24,
+    ): SearchResponse
+
     // 지역구 목록/라인업 (플래너 페이지)
     @GET("api/v1/districts")
     suspend fun districts(): DistrictListResponse

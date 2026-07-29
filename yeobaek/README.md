@@ -122,6 +122,12 @@ CrowdMap 앱 모듈(`app/`)에 여백 화면들을 **별도 런처("여백")** �
   최근접 서울 예보지점도 매핑. 지도에서 아무 곳이나 담을 수 있게 해준다.
 - `GET  /api/v1/districts` / `GET /api/v1/districts/{key}` — 지역구(성수·홍대·강남 …) 목록과
   그 중심 반경의 **명소 라인업**(플래너 페이지용).
+- `GET  /api/v1/places/heatmap?lat=&lng=` — 주변 명소 + **현재 혼잡 레벨(1~4)·한적함 지수(0~100)**.
+  앱이 핀을 혼잡도 색으로 칠하고(히트맵), 정보 카드에 한적함을 표기.
+- `GET  /api/v1/places/offpeak/{content_id}` — 향후 12시간 중 **오프피크(저혼잡) 시간대** top3 + 타임라인.
+- `POST /api/v1/reports` / `GET /api/v1/reports` — **여행자 실시간 제보**(붐빔/한적/팁) 저장·조회(크라우드소싱 MVP).
+
+> 위 3개(heatmap·offpeak·reports)는 **서울 예보권에서 실측**, 서울 밖은 혼잡 레벨이 비어(null) 중립 표시된다.
 
 ---
 

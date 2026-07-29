@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.example.crowdmap.R
+import com.example.crowdmap.yeobaek.data.Congestion
 import com.example.crowdmap.yeobaek.data.PlaceResult
 import com.google.android.material.button.MaterialButton
 
@@ -39,7 +40,8 @@ class RecoAdapter(
         val p = items[position]
         h.title.text = p.title
         val dist = p.distKm?.let { "%.1fkm".format(it) }
-        h.meta.text = listOfNotNull(p.catLabel, dist).joinToString(" · ")
+        val congestion = p.level?.let { Congestion.label(it) }
+        h.meta.text = listOfNotNull(p.catLabel, congestion, dist).joinToString(" · ")
         h.add.setOnClickListener { onAdd(p) }
     }
 

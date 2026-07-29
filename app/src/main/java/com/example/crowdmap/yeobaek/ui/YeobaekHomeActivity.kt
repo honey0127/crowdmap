@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.crowdmap.R
 import com.example.crowdmap.yeobaek.data.AdhocRequest
+import com.example.crowdmap.yeobaek.data.Congestion
 import com.example.crowdmap.yeobaek.data.PlaceResult
 import com.example.crowdmap.yeobaek.data.ScheduleRequest
 import com.example.crowdmap.yeobaek.data.YeobaekClient
@@ -195,7 +196,8 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         recoJob = lifecycleScope.launch {
             delay(450)   // 카메라가 멈춘 뒤에만 요청(스팸 방지)
             try {
-                val res = YeobaekClient.api.nearbyPlaces(center.latitude, center.longitude, radius)
+                // 히트맵: 주변 명소 + 현재 혼잡 레벨(핀 색) + 한적함 지수
+                val res = YeobaekClient.api.heatmap(center.latitude, center.longitude, radius)
                 val fresh = res.results.filter { !selectedStops.containsKey(it.contentId) }
                 recoAdapter.submit(fresh)
                 if (placeInfo.visibility != View.VISIBLE)
@@ -216,9 +218,11 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         for (p in list) {
             val lat = p.lat ?: continue
             val lng = p.lng ?: continue
+            val snippet = p.quietScore?.let { "한적함 $it" }
             val m = gmap.addMarker(
                 MarkerOptions().position(LatLng(lat, lng)).title(p.title)
-                    .icon(BitmapDescriptorFactory.defaultMarker(153f))   // 브랜드 그린
+                    .snippet(snippet)
+                    .icon(BitmapDescriptorFactory.defaultMarker(Congestion.hue(p.level)))  // 혼잡도 색
             ) ?: continue
             nearbyMarkers[m] = p
         }
@@ -279,8 +283,11 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         val dist = place.distKm?.let { "%.1fkm".format(it) }
         infoMeta.text = if (place.contentId <= 0)
             "지도에서 선택한 위치 · 담아서 코스에 추가"
-        else
-            listOfNotNull(place.catLabel, dist, place.addr).joinToString(" · ")
+        else {
+            val congestion = place.level?.let { "${Congestion.label(it)}" }
+            val quiet = place.quietScore?.let { "한적함 $it" }
+            listOfNotNull(place.catLabel, congestion, quiet, dist).joinToString(" · ")
+        }
         val already = selectedStops.containsKey(place.contentId)
         infoAdd.text = if (already) "담김" else "＋ 담기"
         infoAdd.isEnabled = !already

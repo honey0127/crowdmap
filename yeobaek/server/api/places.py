@@ -1,6 +1,8 @@
 """GET /api/v1/places/search — 이름으로 장소 검색(앱에서 방문지 추가용).
-POST /api/v1/places/adhoc — DB 에 없는 임의 위치를 즉석 등록."""
+POST /api/v1/places/adhoc — DB 에 없는 임의 위치를 즉석 등록.
+GET  /api/v1/places/heatmap — 주변 명소의 현재 혼잡 레벨 + 한적함 지수(히트맵용)."""
 from __future__ import annotations
+import time
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -8,6 +10,13 @@ from pydantic import BaseModel
 from ..db import repository
 from ..engine import engine_state
 from ..services.rag import cat_label
+
+
+def quiet_score(level) -> int | None:
+    """한적함 지수(0~100). 혼잡 레벨 1(여유)=100 … 4(붐빔)=0. level 없으면 None."""
+    if not level:
+        return None
+    return round((4 - int(level)) / 3 * 100)
 
 router = APIRouter(prefix="/api/v1", tags=["places"])
 
@@ -46,6 +55,54 @@ def nearby(lat: float = Query(..., description="지도 중심 위도"),
     """지도 이동 시 '이 지역 추천' — 중심 좌표 반경 내 명소를 가까운 순으로."""
     rows = repository.nearby_places(lat, lng, radius_km, limit)
     return {"results": [_to_result(p) for p in rows]}
+
+
+@router.get("/places/heatmap")
+def heatmap(lat: float = Query(...), lng: float = Query(...),
+            radius_km: float = Query(3.0, ge=0.2, le=20.0),
+            limit: int = Query(24, ge=1, le=40)) -> dict:
+    """주변 명소 + 각 명소의 현재 혼잡 레벨(1~4)·한적함 지수. 지도 히트맵/핀 색용.
+    서울 예보권 밖(예보지점 미매핑)은 level=null → 앱이 중립 색으로 표시."""
+    rows = repository.nearby_places(lat, lng, radius_km, limit)
+    now = int(time.time())
+    amap = repository.get_area_map([r["content_id"] for r in rows])
+    out = []
+    for r in rows:
+        area = amap.get(r["content_id"], (None, None))[0]
+        level = None
+        if area and engine_state.available:
+            try:
+                fc = engine_state.forecast(area, now)
+                level = int(fc.level) if fc else None
+            except Exception:
+                level = None
+        item = _to_result(r)
+        item["level"] = level
+        item["quiet_score"] = quiet_score(level)
+        out.append(item)
+    return {"results": out}
+
+
+@router.get("/places/offpeak/{content_id}")
+def offpeak(content_id: int) -> dict:
+    """오프피크 시간 추천 — 향후 12시간 중 혼잡이 낮은 시간대(도착시점 예보 기준).
+    서울 예보권 밖이면 timeline 빈 배열."""
+    area = repository.get_area_name(content_id)
+    timeline = []
+    if area and engine_state.available:
+        now = int(time.time())
+        base = now - (now % 3600) + 3600     # 다음 정시부터
+        for h in range(12):
+            t = base + h * 3600
+            try:
+                fc = engine_state.forecast(area, t)
+                lvl = int(fc.level) if fc else None
+            except Exception:
+                lvl = None
+            if lvl:
+                timeline.append({"unix": t, "level": lvl, "quiet_score": quiet_score(lvl)})
+    best = sorted(timeline, key=lambda x: (x["level"], x["unix"]))[:3]
+    return {"content_id": content_id, "area": area, "best": best, "timeline": timeline}
 
 
 class AdhocPlace(BaseModel):

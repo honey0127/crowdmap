@@ -40,3 +40,15 @@ CREATE TABLE IF NOT EXISTS forecast_cache (
 );
 
 CREATE INDEX IF NOT EXISTS idx_places_area ON places(area_code);
+
+-- 여행자 실시간 제보(크라우드소싱, 모듈5) — "지금 붐벼요/한적해요/팁"
+CREATE TABLE IF NOT EXISTS user_reports (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  content_id  INTEGER,           -- 연관 명소(선택)
+  lat         REAL NOT NULL,
+  lng         REAL NOT NULL,
+  kind        TEXT NOT NULL,     -- 'busy' | 'quiet' | 'tip'
+  text        TEXT,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reports_created ON user_reports(created_at);

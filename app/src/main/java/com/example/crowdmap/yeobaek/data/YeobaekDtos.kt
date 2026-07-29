@@ -94,6 +94,8 @@ data class PlaceResult(
     val lat: Double? = null,   // 지도 마커용
     val lng: Double? = null,
     @SerializedName("dist_km") val distKm: Double? = null,  // 지역 추천 거리
+    val level: Int? = null,                                 // 현재 혼잡 레벨 1~4(히트맵)
+    @SerializedName("quiet_score") val quietScore: Int? = null, // 한적함 지수 0~100
 )
 
 data class SearchResponse(val results: List<PlaceResult>)
@@ -139,4 +141,8 @@ object Congestion {
         else -> 0xFF8A8F8B.toInt()
     }
     fun isHigh(level: Int): Boolean = level >= 3
+    /** 구글맵 마커 색조(0~360). 여유=초록 … 붐빔=빨강. 레벨 없으면 브랜드 그린. */
+    fun hue(level: Int?): Float = when (level) {
+        1 -> 140f; 2 -> 48f; 3 -> 25f; 4 -> 8f; else -> 153f
+    }
 }
