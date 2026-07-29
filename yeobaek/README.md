@@ -81,7 +81,12 @@ CrowdMap 앱 모듈(`app/`)에 여백 화면들을 **별도 런처("여백")** �
 - **코스 방식 2모드**(하단 시트 토글):
   - `자동 최적화` — 혼잡도를 예측해 방문 순서를 재배치(`/schedule` 기본).
   - `내 순서대로` — 내가 고른 순서를 유지하고 도착 시점 혼잡도만 채운다(`keep_order=true`).
-- 흐름: `홈` → `SearchActivity`(`/places/search`, 좌표 포함) → `/schedule`
+- **아무 위치나 등록(어드혹)**: 지도의 명소를 탭하거나 임의 지점을 **길게 누르면** "선택한 위치"로
+  `/places/adhoc` 즉석 등록 후 코스에 담긴다(여백 DB에 없어도 OK).
+- **코스 플래너 페이지(`DistrictActivity`)**: 홈 시트의 "지역별 코스 플래너" 버튼 →
+  **성수·홍대·강남… 지역구 칩** 선택 → 그 지역 **명소 라인업**(`/districts/{key}`)을 담아
+  `코스 만들기`(내가 담은 순서 유지 `keep_order`) → `Planner`.
+- 흐름: `홈`(지도·검색·어드혹) 또는 `코스 플래너`(지역구 라인업) → `/schedule`
   → `Planner`(타임라인 카드·혼잡 배지, 모드별 헤더, 고혼잡 "대안 보기" → `/match`) → `Alternatives`(감성 쌍둥이)
   → `Card`(`/card` 근거 + **원탭 스왑 → 재스케줄**)
 - 네트워킹: Retrofit2 + Gson + Coroutines(`lifecycleScope`), 디바운스 검색, 로딩/에러 처리.
@@ -105,6 +110,10 @@ CrowdMap 앱 모듈(`app/`)에 여백 화면들을 **별도 런처("여백")** �
 - `GET  /api/v1/places/search?q=` — 이름 부분일치 검색(+cat_label, **lat/lng**). 앱 홈 지도 마커용.
 - `GET  /api/v1/places/nearby?lat=&lng=&radius_km=` — 좌표 반경 내 명소를 가까운 순으로.
   앱에서 **지도를 옮기면 "이 지역 추천 · 플래너에 넣을까요?"** 카드에 사용.
+- `POST /api/v1/places/adhoc` — `{title,lat,lng}` → DB 에 없는 임의 위치를 즉석 등록(음수 content_id).
+  최근접 서울 예보지점도 매핑. 지도에서 아무 곳이나 담을 수 있게 해준다.
+- `GET  /api/v1/districts` / `GET /api/v1/districts/{key}` — 지역구(성수·홍대·강남 …) 목록과
+  그 중심 반경의 **명소 라인업**(플래너 페이지용).
 
 ---
 

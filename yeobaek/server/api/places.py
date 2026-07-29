@@ -1,9 +1,12 @@
-"""GET /api/v1/places/search — 이름으로 장소 검색(앱에서 방문지 추가용)."""
+"""GET /api/v1/places/search — 이름으로 장소 검색(앱에서 방문지 추가용).
+POST /api/v1/places/adhoc — DB 에 없는 임의 위치를 즉석 등록."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 from ..db import repository
+from ..engine import engine_state
 from ..services.rag import cat_label
 
 router = APIRouter(prefix="/api/v1", tags=["places"])
@@ -43,3 +46,21 @@ def nearby(lat: float = Query(..., description="지도 중심 위도"),
     """지도 이동 시 '이 지역 추천' — 중심 좌표 반경 내 명소를 가까운 순으로."""
     rows = repository.nearby_places(lat, lng, radius_km, limit)
     return {"results": [_to_result(p) for p in rows]}
+
+
+class AdhocPlace(BaseModel):
+    title: str
+    lat: float
+    lng: float
+
+
+@router.post("/places/adhoc")
+def adhoc(body: AdhocPlace) -> dict:
+    """DB 에 없는 위치를 즉석 등록 → content_id 발급(어드혹). 최근접 예보지점도 매핑."""
+    area = engine_state.nearest_area(body.lat, body.lng)
+    area_name = area[0] if area else None
+    dist = area[1] if area else None
+    title = (body.title or "").strip() or "선택한 위치"
+    cid = repository.insert_adhoc_place(title, body.lat, body.lng, area_name, dist)
+    return {"content_id": cid, "title": title,
+            "lat": body.lat, "lng": body.lng, "area_name": area_name}

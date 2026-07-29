@@ -98,6 +98,33 @@ data class PlaceResult(
 
 data class SearchResponse(val results: List<PlaceResult>)
 
+// ── /api/v1/districts (지역구 라인업) ──
+data class District(
+    val key: String,
+    val name: String,
+    val lat: Double,
+    val lng: Double,
+    val desc: String? = null,
+)
+
+data class DistrictListResponse(val districts: List<District>)
+
+data class DistrictPlacesResponse(
+    val district: District,
+    val places: List<PlaceResult>,
+)
+
+// ── /api/v1/places/adhoc (임의 위치 즉석 등록) ──
+data class AdhocRequest(val title: String, val lat: Double, val lng: Double)
+
+data class AdhocResponse(
+    @SerializedName("content_id") val contentId: Long,
+    val title: String,
+    val lat: Double? = null,
+    val lng: Double? = null,
+    @SerializedName("area_name") val areaName: String? = null,
+)
+
 // 혼잡 레벨 유틸(뷰에서 배지 색·라벨에 사용)
 object Congestion {
     fun label(level: Int): String = when (level) {

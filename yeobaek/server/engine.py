@@ -68,6 +68,16 @@ class EngineState:
     def forecast(self, area_name: str, arrival_unix: int):
         return self.provider.get(area_name, int(arrival_unix))
 
+    def nearest_area(self, lat: float, lng: float):
+        """(lat,lng) 최근접 서울 예보지점 -> (name, dist_km) 또는 None(엔진 부재/미발견)."""
+        if not self.available or self.client is None:
+            return None
+        try:
+            name, dist, found = self.client.nearest_area(float(lat), float(lng))
+        except Exception:
+            return None
+        return (name, dist) if found else None
+
     def make_stop(self, content_id, lat, lng, area_name, dwell_sec, twins=None):
         s = ye.SchedStop()
         s.content_id = int(content_id)

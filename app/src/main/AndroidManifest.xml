@@ -69,6 +69,8 @@
         </activity>
         <activity android:name=".yeobaek.ui.SearchActivity"
             android:theme="@style/Theme.Yeobaek" android:exported="false" />
+        <activity android:name=".yeobaek.ui.DistrictActivity"
+            android:theme="@style/Theme.Yeobaek" android:exported="false" />
         <activity android:name=".yeobaek.ui.PlannerActivity"
             android:theme="@style/Theme.Yeobaek" android:exported="false" />
         <activity android:name=".yeobaek.ui.AlternativesActivity"

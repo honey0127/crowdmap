@@ -3,6 +3,7 @@ package com.example.crowdmap.yeobaek.data
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 // 여백 FastAPI 계약(부록 B). suspend 함수 — Retrofit 2.6+ 코루틴 네이티브 지원.
@@ -30,4 +31,15 @@ interface YeobaekApi {
         @Query("radius_km") radiusKm: Double = 3.0,
         @Query("limit") limit: Int = 12,
     ): SearchResponse
+
+    // 지역구 목록/라인업 (플래너 페이지)
+    @GET("api/v1/districts")
+    suspend fun districts(): DistrictListResponse
+
+    @GET("api/v1/districts/{key}")
+    suspend fun districtPlaces(@Path("key") key: String): DistrictPlacesResponse
+
+    // DB 에 없는 임의 위치 즉석 등록 → content_id
+    @POST("api/v1/places/adhoc")
+    suspend fun addAdhoc(@Body req: AdhocRequest): AdhocResponse
 }

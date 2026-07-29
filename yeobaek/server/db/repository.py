@@ -111,6 +111,32 @@ def get_area_name(content_id: int) -> Optional[str]:
     return m[content_id][0] if content_id in m else None
 
 
+def insert_adhoc_place(title: str, lat: float, lng: float,
+                       area_name: Optional[str] = None,
+                       dist_km: Optional[float] = None) -> int:
+    """DB 에 없는 임의 위치를 즉석 등록(사용자가 지도에서 고른 지점).
+    content_id 는 음수 영역을 써서 TourAPI id(양수)와 충돌하지 않게 한다."""
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT MIN(content_id) AS m FROM places").fetchone()
+        min_id = row["m"] if row and row["m"] is not None else 0
+        new_id = min(int(min_id) - 1, -1)
+        conn.execute(
+            "INSERT INTO places(content_id,title,addr,mapx,mapy,cat,updated_at) "
+            "VALUES(?,?,?,?,?,?,datetime('now'))",
+            (new_id, title, None, float(lng), float(lat), None),
+        )
+        if area_name:
+            conn.execute(
+                "INSERT OR REPLACE INTO place_area_map(content_id,seoul_area_name,dist_km) "
+                "VALUES(?,?,?)", (new_id, area_name, dist_km),
+            )
+        conn.commit()
+        return new_id
+    finally:
+        conn.close()
+
+
 def nearby_places(lat: float, lng: float, radius_km: float = 3.0,
                   limit: int = 12) -> list[dict]:
     """좌표 반경 내 장소를 가까운 순으로. 지도 이동 시 '이 지역 추천'에 사용.

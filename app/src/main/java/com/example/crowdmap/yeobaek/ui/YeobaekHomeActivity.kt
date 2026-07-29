@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.crowdmap.R
+import com.example.crowdmap.yeobaek.data.AdhocRequest
 import com.example.crowdmap.yeobaek.data.PlaceResult
 import com.example.crowdmap.yeobaek.data.ScheduleRequest
 import com.example.crowdmap.yeobaek.data.YeobaekClient
@@ -117,6 +118,9 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         findViewById<View>(R.id.search_bar).setOnClickListener(openSearch)
         findViewById<MaterialButton>(R.id.btn_add_place).setOnClickListener(openSearch)
         planButton.setOnClickListener { requestSchedule() }
+        findViewById<MaterialButton>(R.id.btn_district).setOnClickListener {
+            startActivity(Intent(this, DistrictActivity::class.java))
+        }
 
         // 지역 추천 패널
         recoPanel = findViewById(R.id.reco_panel)
@@ -171,6 +175,11 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         }
         googleMap.setOnPoiClickListener { poi -> handlePoiTap(poi) }
         googleMap.setOnMapClickListener { hidePlaceInfo() }
+        // 아무 지점이나 길게 누르면 그 위치를 '선택한 위치'로 담을 수 있게(어드혹)
+        googleMap.setOnMapLongClickListener { ll ->
+            showPlaceInfo(PlaceResult(contentId = 0, title = "선택한 위치",
+                lat = ll.latitude, lng = ll.longitude))
+        }
         // 구성 변경 등으로 이미 담긴 장소가 있으면 마커 복원
         selectedStops.forEach { (id, stop) -> addSelectedMarker(id, stop) }
         fitCameraToSelected()
@@ -216,8 +225,26 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun addFromReco(place: PlaceResult) {
-        addStop(place.contentId, Stop(place.title, place.lat ?: Double.NaN, place.lng ?: Double.NaN))
-        Toast.makeText(this, "‘${place.title}’ 플래너에 담았어요", Toast.LENGTH_SHORT).show()
+        // DB 명소(content_id>0)는 바로 담고, 어드혹(0)은 서버에 즉석 등록 후 담는다.
+        if (place.contentId > 0) {
+            addStop(place.contentId,
+                Stop(place.title, place.lat ?: Double.NaN, place.lng ?: Double.NaN))
+            Toast.makeText(this, "‘${place.title}’ 플래너에 담았어요", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val lat = place.lat; val lng = place.lng
+        if (lat == null || lng == null) return
+        lifecycleScope.launch {
+            try {
+                val res = YeobaekClient.api.addAdhoc(AdhocRequest(place.title, lat, lng))
+                addStop(res.contentId, Stop(res.title, lat, lng))
+                Toast.makeText(this@YeobaekHomeActivity,
+                    "‘${res.title}’ 담았어요", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this@YeobaekHomeActivity,
+                    "담기 실패: ${e.message ?: "서버 확인"}", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     /** 지도 명소 라벨(구글 POI) 탭 →
@@ -238,9 +265,10 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
                 if (byLoc != null && (byLoc.distKm ?: 9.9) <= 0.25) {
                     showPlaceInfo(byLoc)
                 } else {
-                    Toast.makeText(this@YeobaekHomeActivity,
-                        "여기엔 여백에 등록된 명소가 없어요 · 초록 핀을 눌러보세요",
-                        Toast.LENGTH_SHORT).show()
+                    // DB 에 없는 명소 — 이 위치 자체를 담을 수 있게 제시(어드혹).
+                    showPlaceInfo(PlaceResult(contentId = 0,
+                        title = korean.ifBlank { "선택한 위치" },
+                        lat = ll.latitude, lng = ll.longitude))
                 }
             } catch (e: Exception) { /* 부가 기능 — 조용히 무시 */ }
         }
@@ -249,7 +277,10 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun showPlaceInfo(place: PlaceResult) {
         infoTitle.text = place.title
         val dist = place.distKm?.let { "%.1fkm".format(it) }
-        infoMeta.text = listOfNotNull(place.catLabel, dist, place.addr).joinToString(" · ")
+        infoMeta.text = if (place.contentId <= 0)
+            "지도에서 선택한 위치 · 담아서 코스에 추가"
+        else
+            listOfNotNull(place.catLabel, dist, place.addr).joinToString(" · ")
         val already = selectedStops.containsKey(place.contentId)
         infoAdd.text = if (already) "담김" else "＋ 담기"
         infoAdd.isEnabled = !already
