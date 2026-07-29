@@ -7,6 +7,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -14,7 +15,9 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.crowdmap.R
 import com.example.crowdmap.yeobaek.data.AdhocRequest
 import com.example.crowdmap.yeobaek.data.Congestion
+import com.example.crowdmap.yeobaek.data.EcoStore
 import com.example.crowdmap.yeobaek.data.PlaceResult
+import com.example.crowdmap.yeobaek.data.ReportRequest
 import com.example.crowdmap.yeobaek.data.ScheduleRequest
 import com.example.crowdmap.yeobaek.data.YeobaekClient
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -48,6 +51,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -88,6 +92,11 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var infoTitle: TextView
     private lateinit var infoMeta: TextView
     private lateinit var infoAdd: MaterialButton
+    private lateinit var infoOffpeak: MaterialButton
+    private lateinit var infoDisperse: MaterialButton
+    private lateinit var recoHeader: TextView
+    private lateinit var ecoChip: TextView
+    private val reportMarkers = ArrayList<Marker>()
 
     private val searchLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -138,7 +147,15 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         infoTitle = findViewById(R.id.info_title)
         infoMeta = findViewById(R.id.info_meta)
         infoAdd = findViewById(R.id.info_add)
+        infoOffpeak = findViewById(R.id.info_offpeak)
+        infoDisperse = findViewById(R.id.info_disperse)
+        recoHeader = findViewById(R.id.reco_header)
         findViewById<View>(R.id.info_close).setOnClickListener { hidePlaceInfo() }
+
+        // 에코 트래블러 배지 + 실시간 제보
+        ecoChip = findViewById(R.id.eco_chip)
+        updateEcoChip()
+        findViewById<MaterialButton>(R.id.btn_report).setOnClickListener { showReportDialog() }
 
         val modeGroup = findViewById<MaterialButtonToggleGroup>(R.id.mode_group)
         modeGroup.check(R.id.btn_mode_auto)
@@ -199,10 +216,12 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
                 // 히트맵: 주변 명소 + 현재 혼잡 레벨(핀 색) + 한적함 지수
                 val res = YeobaekClient.api.heatmap(center.latitude, center.longitude, radius)
                 val fresh = res.results.filter { !selectedStops.containsKey(it.contentId) }
+                recoHeader.text = "이 지역 추천 · 플래너에 넣을까요?"
                 recoAdapter.submit(fresh)
                 if (placeInfo.visibility != View.VISIBLE)
                     recoPanel.visibility = if (fresh.isEmpty()) View.GONE else View.VISIBLE
                 renderNearbyMarkers(fresh)
+                loadReports()
             } catch (e: Exception) {
                 // 추천은 부가 기능 — 실패 시 조용히 숨김
                 recoPanel.visibility = View.GONE
@@ -234,6 +253,8 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
             addStop(place.contentId,
                 Stop(place.title, place.lat ?: Double.NaN, place.lng ?: Double.NaN))
             Toast.makeText(this, "‘${place.title}’ 플래너에 담았어요", Toast.LENGTH_SHORT).show()
+            // 에코 리워드: 한적한 곳(여유/보통)을 담으면 포인트
+            if ((place.level ?: 9) <= 2) awardEco(EcoStore.P_QUIET_ADD)
             return
         }
         val lat = place.lat; val lng = place.lng
@@ -292,8 +313,132 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         infoAdd.text = if (already) "담김" else "＋ 담기"
         infoAdd.isEnabled = !already
         infoAdd.setOnClickListener { addFromReco(place); hidePlaceInfo() }
+        // 오프피크/미시분산은 DB 명소(content_id>0)에서만
+        val isDb = place.contentId > 0
+        infoOffpeak.visibility = if (isDb) View.VISIBLE else View.GONE
+        infoDisperse.visibility = if (isDb) View.VISIBLE else View.GONE
+        infoOffpeak.setOnClickListener { showOffpeak(place) }
+        infoDisperse.setOnClickListener { showDisperse(place) }
         recoPanel.visibility = View.GONE
         placeInfo.visibility = View.VISIBLE
+    }
+
+    /** 오프피크(덜 붐비는 시간) — 향후 12h 중 저혼잡 시간대 top3 다이얼로그. */
+    private fun showOffpeak(place: PlaceResult) {
+        lifecycleScope.launch {
+            try {
+                val res = YeobaekClient.api.offpeak(place.contentId)
+                if (res.best.isEmpty()) {
+                    Toast.makeText(this@YeobaekHomeActivity,
+                        "이 지역은 예보가 없어 오프피크 추천이 어려워요(서울권만)",
+                        Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val fmt = DateTimeFormatter.ofPattern("HH:mm")
+                val lines = res.best.joinToString("\n") { h ->
+                    val t = java.time.Instant.ofEpochSecond(h.unix)
+                        .atZone(ZoneId.of("Asia/Seoul")).toLocalTime().format(fmt)
+                    "· $t   ${Congestion.label(h.level)}  (한적함 ${h.quietScore ?: "-"})"
+                }
+                AlertDialog.Builder(this@YeobaekHomeActivity)
+                    .setTitle("‘${place.title}’ 덜 붐비는 시간")
+                    .setMessage(lines)
+                    .setPositiveButton("좋아요", null)
+                    .show()
+                awardEco(EcoStore.P_OFFPEAK)
+            } catch (e: Exception) {
+                Toast.makeText(this@YeobaekHomeActivity, "오프피크 조회 실패",
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** 미시적 분산 — 도보권 더 한적한 대안을 추천 카루셀에 채운다. */
+    private fun showDisperse(place: PlaceResult) {
+        lifecycleScope.launch {
+            try {
+                val res = YeobaekClient.api.disperse(place.contentId)
+                val fresh = res.results.filter { !selectedStops.containsKey(it.contentId) }
+                if (fresh.isEmpty()) {
+                    Toast.makeText(this@YeobaekHomeActivity,
+                        "근처에 더 한적한 대안이 없어요", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                recoHeader.text = "🚶 ‘${place.title}’ 근처 더 한적한 곳"
+                recoAdapter.submit(fresh)
+                renderNearbyMarkers(fresh)
+                hidePlaceInfo()
+                recoPanel.visibility = View.VISIBLE
+            } catch (e: Exception) {
+                Toast.makeText(this@YeobaekHomeActivity, "대안 조회 실패",
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun updateEcoChip() {
+        ecoChip.text = "🌱 ${EcoStore.points(this)}"
+    }
+
+    private fun awardEco(pts: Int) {
+        val total = EcoStore.award(this, pts)
+        updateEcoChip()
+        Toast.makeText(this, "🌱 +$pts 에코 포인트 · ${EcoStore.badge(total)}",
+            Toast.LENGTH_SHORT).show()
+    }
+
+    /** 이 지점 실시간 제보(붐빔/한적/팁). */
+    private fun showReportDialog() {
+        val gmap = map ?: return
+        val c = gmap.cameraPosition.target
+        val labels = arrayOf("😖 지금 붐벼요", "😌 여기 한적해요", "💡 팁 남기기")
+        val kinds = arrayOf("busy", "quiet", "tip")
+        AlertDialog.Builder(this)
+            .setTitle("이 지점(지도 중심) 실시간 제보")
+            .setItems(labels) { _, which -> postReport(kinds[which], c.latitude, c.longitude) }
+            .show()
+    }
+
+    private fun postReport(kind: String, lat: Double, lng: Double) {
+        lifecycleScope.launch {
+            try {
+                YeobaekClient.api.postReport(ReportRequest(kind, lat, lng))
+                awardEco(EcoStore.P_REPORT)
+                loadReports()
+            } catch (e: Exception) {
+                Toast.makeText(this@YeobaekHomeActivity, "제보 실패: ${e.message ?: "서버 확인"}",
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** 반경 내 최근 제보를 지도에 마커로. */
+    private fun loadReports() {
+        val gmap = map ?: return
+        val c = gmap.cameraPosition.target
+        lifecycleScope.launch {
+            try {
+                val reports = YeobaekClient.api
+                    .getReports(c.latitude, c.longitude, radiusKmFromMap(gmap)).reports
+                reportMarkers.forEach { it.remove() }
+                reportMarkers.clear()
+                for (r in reports) {
+                    val hue = when (r.kind) {
+                        "busy" -> BitmapDescriptorFactory.HUE_RED
+                        "quiet" -> BitmapDescriptorFactory.HUE_AZURE
+                        else -> BitmapDescriptorFactory.HUE_VIOLET
+                    }
+                    val label = when (r.kind) {
+                        "busy" -> "😖 붐빔 제보"; "quiet" -> "😌 한적 제보"; else -> "💡 여행 팁"
+                    }
+                    val m = gmap.addMarker(
+                        MarkerOptions().position(LatLng(r.lat, r.lng))
+                            .title(label).snippet(r.text)
+                            .icon(BitmapDescriptorFactory.defaultMarker(hue)))
+                    if (m != null) reportMarkers.add(m)
+                }
+            } catch (e: Exception) { /* 부가 기능 */ }
+        }
     }
 
     private fun hidePlaceInfo() {

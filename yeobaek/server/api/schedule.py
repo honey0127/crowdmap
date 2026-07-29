@@ -80,6 +80,8 @@ def schedule(req: ScheduleRequest) -> dict:
             "arrival": unix_to_kst_hhmm(ps.arrival_unix),
             "forecast_level": ps.forecast_level,
             "substituted_from": ps.substituted_from if ps.substituted_from != -1 else None,
+            "lat": ps.lat,
+            "lng": ps.lng,
         })
 
     return {

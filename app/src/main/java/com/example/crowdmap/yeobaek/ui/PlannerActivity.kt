@@ -2,14 +2,19 @@ package com.example.crowdmap.yeobaek.ui
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.crowdmap.R
+import com.example.crowdmap.yeobaek.data.Congestion
 import com.example.crowdmap.yeobaek.data.PlanStop
 import com.example.crowdmap.yeobaek.data.ScheduleResponse
 import com.example.crowdmap.yeobaek.data.YeobaekClient
+import com.google.android.material.card.MaterialCardView
+import kotlinx.coroutines.launch
 
 /**
  * 플래너(절차서 4-2): 최적 코스 타임라인(도착시각·혼잡 배지).
@@ -47,8 +52,42 @@ class PlannerActivity : AppCompatActivity() {
             saved.text = "혼잡 ${plan.savedCongestionPct}% 절약"
             sub.text = "${plan.ordered.size}곳 · 혼잡도 예측으로 순서 자동 조정"
         }
+
+        // 역방향/엇갈림 동선 힌트(모듈: counter-flow) — 자동 재배치로 혼잡을 회피했을 때
+        val hint = findViewById<TextView>(R.id.planner_hint)
+        if (!keepOrder && plan.savedCongestionPct > 0) {
+            hint.visibility = View.VISIBLE
+            hint.text = "↺ 군중과 엇갈리는 동선으로 재배치했어요 (혼잡 ${plan.savedCongestionPct}%↓)"
+        } else {
+            hint.visibility = View.GONE
+        }
+
         recycler.adapter = PlanAdapter(plan.ordered) { stop ->
             openAlternatives(stop, stops, startTime)
+        }
+
+        checkRealtimeSurge(plan)
+    }
+
+    /** 실시간 급증 알림(모듈4): 코스 상의 장소 중 지금 붐비는 곳을 감지해 배너로. */
+    private fun checkRealtimeSurge(plan: ScheduleResponse) {
+        val alert = findViewById<MaterialCardView>(R.id.planner_alert)
+        val alertText = findViewById<TextView>(R.id.planner_alert_text)
+        lifecycleScope.launch {
+            for (stop in plan.ordered) {
+                val lat = stop.lat ?: continue
+                val lng = stop.lng ?: continue
+                val now = try {
+                    YeobaekClient.api.resolveNow(lat, lng)
+                } catch (e: Exception) { null } ?: continue
+                val lvl = now.level
+                if (now.valid && lvl != null && lvl >= 3) {
+                    alertText.text =
+                        "⚠ ‘${stop.title}’ 지금 ${Congestion.label(lvl)} — 도착 시점을 늦추거나 대안을 눌러보세요"
+                    alert.visibility = View.VISIBLE
+                    return@launch   // 첫 급증 지점만 알림
+                }
+            }
         }
     }
 

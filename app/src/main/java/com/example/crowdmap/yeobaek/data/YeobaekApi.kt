@@ -51,4 +51,30 @@ interface YeobaekApi {
     // DB 에 없는 임의 위치 즉석 등록 → content_id
     @POST("api/v1/places/adhoc")
     suspend fun addAdhoc(@Body req: AdhocRequest): AdhocResponse
+
+    // 미시적 분산 — 도보권 더 한적한 대안
+    @GET("api/v1/places/disperse/{id}")
+    suspend fun disperse(@Path("id") id: Long): DisperseResponse
+
+    // 오프피크 시간대
+    @GET("api/v1/places/offpeak/{id}")
+    suspend fun offpeak(@Path("id") id: Long): OffpeakResponse
+
+    // 실시간 현재 혼잡(리스케줄 알림)
+    @GET("api/v1/resolve_now")
+    suspend fun resolveNow(
+        @Query("lat") lat: Double,
+        @Query("lng") lng: Double,
+    ): ResolveNowResponse
+
+    // 여행자 실시간 제보
+    @POST("api/v1/reports")
+    suspend fun postReport(@Body req: ReportRequest): ReportAck
+
+    @GET("api/v1/reports")
+    suspend fun getReports(
+        @Query("lat") lat: Double,
+        @Query("lng") lng: Double,
+        @Query("radius_km") radiusKm: Double = 3.0,
+    ): ReportsResponse
 }

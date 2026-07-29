@@ -83,6 +83,53 @@ def heatmap(lat: float = Query(...), lng: float = Query(...),
     return {"results": out}
 
 
+def _with_congestion(rows: list[dict], now: int) -> list[dict]:
+    """장소 목록에 현재 혼잡 레벨 + 한적함 지수를 붙인다."""
+    amap = repository.get_area_map([r["content_id"] for r in rows])
+    out = []
+    for r in rows:
+        area = amap.get(r["content_id"], (None, None))[0]
+        level = None
+        if area and engine_state.available:
+            try:
+                fc = engine_state.forecast(area, now)
+                level = int(fc.level) if fc else None
+            except Exception:
+                level = None
+        item = _to_result(r)
+        item["level"] = level
+        item["quiet_score"] = quiet_score(level)
+        out.append(item)
+    return out
+
+
+@router.get("/places/disperse/{content_id}")
+def disperse(content_id: int,
+             radius_km: float = Query(0.9, ge=0.2, le=3.0),
+             limit: int = Query(8, ge=1, le=20)) -> dict:
+    """미시적 분산 — 이 명소 주변(도보권 ~0.9km)의 **더 한적한** 대안을 추천.
+    혼잡 레벨 낮은 순으로 정렬(엔진/키 없으면 거리순)."""
+    p = repository.get_place(content_id)
+    if not p:
+        raise HTTPException(status_code=404, detail=f"unknown content_id: {content_id}")
+    rows = [r for r in repository.nearby_places(p["lat"], p["lng"], radius_km, 40)
+            if r["content_id"] != content_id]
+    items = _with_congestion(rows, int(time.time()))
+    items.sort(key=lambda x: (x["level"] if x["level"] else 9, x.get("dist_km") or 9.9))
+    return {"source_id": content_id, "results": items[:limit]}
+
+
+@router.get("/resolve_now")
+def resolve_now(lat: float = Query(...), lng: float = Query(...)) -> dict:
+    """실시간 현재 혼잡(모듈4) — 다음 장소 급증 감지·리스케줄 알림용. 서울권만 valid."""
+    r = engine_state.resolve_now(lat, lng)
+    if r is None:
+        return {"level": None, "valid": False, "quiet_score": None}
+    level, ratio, valid = r
+    return {"level": level, "ratio": ratio, "valid": valid,
+            "quiet_score": quiet_score(level)}
+
+
 @router.get("/places/offpeak/{content_id}")
 def offpeak(content_id: int) -> dict:
     """오프피크 시간 추천 — 향후 12시간 중 혼잡이 낮은 시간대(도착시점 예보 기준).

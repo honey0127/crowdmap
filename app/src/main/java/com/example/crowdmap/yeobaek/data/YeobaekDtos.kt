@@ -28,6 +28,8 @@ data class PlanStop(
     val arrival: String,                                   // "HH:MM"
     @SerializedName("forecast_level") val forecastLevel: Int, // 1~4
     @SerializedName("substituted_from") val substitutedFrom: Long? = null,
+    val lat: Double? = null,
+    val lng: Double? = null,
 )
 
 data class ScheduleResponse(
@@ -115,6 +117,56 @@ data class DistrictPlacesResponse(
     val district: District,
     val places: List<PlaceResult>,
 )
+
+// ── /api/v1/places/disperse (미시적 분산) ──
+data class DisperseResponse(
+    @SerializedName("source_id") val sourceId: Long,
+    val results: List<PlaceResult> = emptyList(),
+)
+
+// ── /api/v1/places/offpeak (오프피크 시간) ──
+data class OffpeakHour(
+    val unix: Long,
+    val level: Int,
+    @SerializedName("quiet_score") val quietScore: Int? = null,
+)
+
+data class OffpeakResponse(
+    @SerializedName("content_id") val contentId: Long,
+    val area: String? = null,
+    val best: List<OffpeakHour> = emptyList(),
+    val timeline: List<OffpeakHour> = emptyList(),
+)
+
+// ── /api/v1/resolve_now (실시간 혼잡, 리스케줄 알림) ──
+data class ResolveNowResponse(
+    val level: Int? = null,
+    val valid: Boolean = false,
+    @SerializedName("quiet_score") val quietScore: Int? = null,
+)
+
+// ── /api/v1/reports (여행자 실시간 제보) ──
+data class ReportRequest(
+    val kind: String,                 // busy | quiet | tip
+    val lat: Double,
+    val lng: Double,
+    val text: String? = null,
+    @SerializedName("content_id") val contentId: Long? = null,
+)
+
+data class ReportAck(val id: Long, val ok: Boolean = true)
+
+data class ReportItem(
+    val id: Long,
+    val lat: Double,
+    val lng: Double,
+    val kind: String,
+    val text: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null,
+    @SerializedName("dist_km") val distKm: Double? = null,
+)
+
+data class ReportsResponse(val reports: List<ReportItem> = emptyList())
 
 // ── /api/v1/places/adhoc (임의 위치 즉석 등록) ──
 data class AdhocRequest(val title: String, val lat: Double, val lng: Double)
