@@ -220,15 +220,28 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         Toast.makeText(this, "‘${place.title}’ 플래너에 담았어요", Toast.LENGTH_SHORT).show()
     }
 
-    /** 지도 명소 라벨(구글 POI) 탭 → 여백 DB에서 이름으로 찾아 정보 카드. */
+    /** 지도 명소 라벨(구글 POI) 탭 →
+     *  ① 라벨의 한글 이름으로 검색(구글 라벨은 영문+한글 혼합이라 한글만 추출),
+     *  ② 실패하면 탭한 좌표에서 가장 가까운 여백 명소(반경 250m)로 매칭,
+     *  ③ 둘 다 없으면 근처에 등록 명소가 없다고 안내(초록 핀 유도). */
     private fun handlePoiTap(poi: PointOfInterest) {
-        val name = poi.name.replace("\n", " ").trim()
+        val ll = poi.latLng
+        val korean = poi.name.split("\n").map { it.trim() }
+            .firstOrNull { seg -> seg.any { it in '가'..'힣' } } ?: poi.name.trim()
         lifecycleScope.launch {
             try {
-                val hit = YeobaekClient.api.searchPlaces(name, 1).results.firstOrNull()
-                if (hit != null) showPlaceInfo(hit)
-                else Toast.makeText(this@YeobaekHomeActivity,
-                    "‘$name’은 여백 목록에 없어요", Toast.LENGTH_SHORT).show()
+                val byName = korean.takeIf { it.isNotBlank() }
+                    ?.let { YeobaekClient.api.searchPlaces(it, 1).results.firstOrNull() }
+                if (byName != null) { showPlaceInfo(byName); return@launch }
+                val byLoc = YeobaekClient.api
+                    .nearbyPlaces(ll.latitude, ll.longitude, 0.4, 1).results.firstOrNull()
+                if (byLoc != null && (byLoc.distKm ?: 9.9) <= 0.25) {
+                    showPlaceInfo(byLoc)
+                } else {
+                    Toast.makeText(this@YeobaekHomeActivity,
+                        "여기엔 여백에 등록된 명소가 없어요 · 초록 핀을 눌러보세요",
+                        Toast.LENGTH_SHORT).show()
+                }
             } catch (e: Exception) { /* 부가 기능 — 조용히 무시 */ }
         }
     }
