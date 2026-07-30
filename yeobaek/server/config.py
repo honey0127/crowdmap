@@ -17,8 +17,13 @@ def _get(name: str, default: str = "") -> str:
 
 class Settings:
     # ── 외부 API 키 ──
-    SEOUL_API_KEY: str = _get("SEOUL_API_KEY")           # 서울 실시간 도시데이터
+    SEOUL_API_KEY: str = _get("SEOUL_API_KEY")           # 서울 실시간 도시데이터(서울 혼잡)
     TOURAPI_KEY: str = _get("TOURAPI_KEY")               # 한국관광공사 TourAPI (필수 활용)
+    # 전국 관광지 집중률 예측(한국관광공사 TatsCnctrRateService) — 전국 혼잡 소스
+    TATS_API_KEY: str = _get("TATS_API_KEY")
+    TATS_ENDPOINT: str = _get(
+        "TATS_ENDPOINT",
+        "https://apis.data.go.kr/B551011/TatsCnctrRateService/tatsCnctrRatedList")
 
     # ── 데이터 경로 ──
     DB_PATH: str = _get("YEOBAEK_DB", str(DATA_DIR / "yeobaek.db"))
