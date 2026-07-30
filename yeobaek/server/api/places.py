@@ -119,6 +119,19 @@ def disperse(content_id: int,
     return {"source_id": content_id, "results": items[:limit]}
 
 
+@router.get("/tats")
+def tats(area_cd: str = Query(..., description="시도 코드(서울=11)"),
+         signgu_cd: str = Query(..., description="시군구 코드(강남구=11680)"),
+         ymd: str | None = Query(None, description="기준일 YYYYMMDD(생략=30일 전체)")) -> dict:
+    """전국 관광지 집중률 예측 원본 조회(테스트/검증용). cnctrRate→level 포함."""
+    from ..services.tats import TatsClient, TatsError
+    try:
+        rows = TatsClient().list_by_sigungu(area_cd, signgu_cd, ymd)
+    except TatsError as e:
+        raise HTTPException(status_code=502, detail=f"TATS: {e}")
+    return {"count": len(rows), "results": rows[:50]}
+
+
 @router.get("/resolve_now")
 def resolve_now(lat: float = Query(...), lng: float = Query(...)) -> dict:
     """실시간 현재 혼잡(모듈4) — 다음 장소 급증 감지·리스케줄 알림용. 서울권만 valid."""
