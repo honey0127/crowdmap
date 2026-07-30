@@ -33,6 +33,10 @@ def main() -> int:
         print("ERROR: TATS_API_KEY 환경변수가 필요합니다.", file=sys.stderr)
         return 2
 
+    import datetime
+    today = datetime.date.today()
+    recent = [(today - datetime.timedelta(days=d)).strftime("%Y%m%d") for d in (1, 7, 14, 30)]
+
     base = {
         "serviceKey": KEY,
         "MobileOS": "ETC",
@@ -42,30 +46,43 @@ def main() -> int:
         "_type": "json",
     }
 
-    # 기본 호출부터. 필수 파라미터가 더 필요하면 에러 메시지로 드러난다.
-    print("=== [1] 기본 호출 (numOfRows=5, _type=json) ===")
-    try:
-        body = call(base)
-        print(body[:4000])
-        # JSON 이면 첫 item 의 키를 뽑아 보여준다(필드명 확인용)
+    # areaCd=11(서울), signguCd=11680(강남구) 로 필수값 채워 순차 시도.
+    attempts = [
+        ("areaCd=11", {**base, "areaCd": "11"}),
+        ("areaCd=11 & signguCd=11680", {**base, "areaCd": "11", "signguCd": "11680"}),
+    ]
+    for ymd in recent:
+        attempts.append((f"areaCd=11 & signguCd=11680 & baseYmd={ymd}",
+                         {**base, "areaCd": "11", "signguCd": "11680", "baseYmd": ymd}))
+
+    def show_fields(body: str) -> bool:
         try:
             j = json.loads(body)
-            items = (j.get("response", {}).get("body", {})
-                       .get("items", {}))
-            item = items.get("item") if isinstance(items, dict) else None
-            first = item[0] if isinstance(item, list) and item else item
-            if isinstance(first, dict):
-                print("\n--- 첫 항목 필드명 ---")
-                for k, v in first.items():
-                    print(f"  {k} = {v}")
         except Exception:
-            pass
-    except Exception as e:
-        print(f"[1] 오류: {e}")
+            return False
+        rc = j.get("response", {}).get("header", {}).get("resultCode")
+        items = j.get("response", {}).get("body", {}).get("items", {})
+        item = items.get("item") if isinstance(items, dict) else None
+        first = item[0] if isinstance(item, list) and item else item
+        if isinstance(first, dict):
+            print("  --- 첫 항목 필드명 ---")
+            for k, v in first.items():
+                print(f"    {k} = {v}")
+            return True
+        return rc == "0000"
 
-    # 참고: 지역/기준일 필터가 필요할 수 있어 후보 파라미터도 안내
-    print("\n※ 위가 에러(필수 파라미터 누락 등)면, 매뉴얼의 필수 항목"
-          "(예: signguCode, baseYmd=YYYYMMDD, areaCd 등)을 알려주세요.")
+    for label, params in attempts:
+        print(f"\n=== {label} ===")
+        try:
+            body = call(params)
+            print(body[:2500])
+            if show_fields(body) and "item" in body:
+                print("\n>>> 성공! 위 필드명을 붙여주세요.")
+                break
+        except Exception as e:
+            print(f"오류: {e}")
+
+    print("\n※ 여전히 에러면 그 resultMsg 를 알려주세요(다음 필수 파라미터를 알 수 있음).")
     return 0
 
 
