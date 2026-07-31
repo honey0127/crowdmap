@@ -4,7 +4,7 @@ GET  /api/v1/places/heatmap — 주변 명소의 현재 혼잡 레벨 + 한적�
 from __future__ import annotations
 import time
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..db import repository

@@ -72,17 +72,19 @@
 - [x] **코스 2모드**: `자동 최적화`(혼잡도로 순서 재배치) / `내 순서대로`(`keep_order=true`, 고른 순서 유지·도착시점 예보만). 엔진·pybind·API·앱 토글까지 관통.
 - [x] 승인 시안 팔레트 반영(브랜드 그린 `#0FB86B`, 페이퍼, 혼잡 히트 스케일).
 - [x] Retrofit2 + Gson + Coroutines(`lifecycleScope`), 로딩/에러 Toast.
+- [x] `local.properties` `SERVER_IP=10.0.2.2`(에뮬레이터) 설정 완료. 실기기 시 PC LAN IP 로 변경.
 - [ ] **Android Studio 최초 빌드**(Gradle sync·의존성 해결) + 실기기/에뮬레이터 실행 검증.
-- [ ] `local.properties` `SERVER_IP` 설정, uvicorn `--host 0.0.0.0`. (필요 시 서버 CORS)
 - [ ] (선택) 구글맵 API 키가 만료/미설정이면 `AndroidManifest.xml` `com.google.android.geo.API_KEY` 갱신.
 
 ### 🟡 P2 — 모듈4 실시간 스왑 (Phase 4-5)
-- [ ] CrowdMap `TrackingCore`(Foreground Service) 재활용 → 다음 장소 실시간 급증 감지 시 `router.resolve_now`로 스왑 제안·푸시.
+- [x] `PlannerActivity.startSurgeMonitor()` — 코스 stop 을 **90초마다** 폴링해 `resolve_now` 급증 감지·배너 표시·배너 자동 소멸. `surgeJob`(lifecycleScope) 로 액티비티 생명주기 연동.
+- [ ] (확장) CrowdMap `TrackingCore` Foreground Service 로 화면이 꺼진 뒤에도 급증 감시·알림 푸시.
 
 ### 🟡 P2 — 통합·안정화·심사 산출물 (Phase 5)
-- [ ] E2E 안정화: API 실패/예보부재/네트워크 끊김에서 **fallback 전 경로** 동작 확인.
-- [ ] `valgrind`로 엔진 메모리 누수 점검, 서버 크래시 내성.
-- [ ] 시연 시나리오 고정: 경복궁 혼잡 시각 → 대안 궁궐 스왑 → 절약 시간 표시까지 한 번에.
+- [x] **server 버그 수정**: `server/api/places.py` — `HTTPException` 누락 import 추가(`disperse`·`tats` 엔드포인트 정상화).
+- [x] **시연 시나리오 고정**: `scripts/demo_smoke.py` — seed DB(경복궁·덕수궁·창덕궁·운현궁) 자동 주입 후 9개 엔드포인트 스모크. API 키 없이 실행 가능. `python scripts/demo_smoke.py`
+- [ ] 실데이터(API 키 환경) 에서 E2E 재검증 — 예보 실제 반영(FCST_PPLTN 레벨 1~4), 전국 집중률(TATS) 연동.
+- [ ] `valgrind`로 엔진 메모리 누수 점검(Linux 환경).
 - [ ] 기능설명서(해시태그↔기능, README에 초안 있음) + OpenAPI 필수 활용 근거(TourAPI 명시, 서울데이터는 외부추가) 정리.
 
 ---

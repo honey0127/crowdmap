@@ -14,6 +14,9 @@ import com.example.crowdmap.yeobaek.data.PlanStop
 import com.example.crowdmap.yeobaek.data.ScheduleResponse
 import com.example.crowdmap.yeobaek.data.YeobaekClient
 import com.google.android.material.card.MaterialCardView
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -22,6 +25,8 @@ import kotlinx.coroutines.launch
  * 스왑으로 재스케줄된 결과가 CLEAR_TOP 으로 이 액티비티를 새 인텐트로 재생성한다.
  */
 class PlannerActivity : AppCompatActivity() {
+
+    private var surgeJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,27 +71,47 @@ class PlannerActivity : AppCompatActivity() {
             openAlternatives(stop, stops, startTime)
         }
 
-        checkRealtimeSurge(plan)
+        startSurgeMonitor(plan)
     }
 
-    /** 실시간 급증 알림(모듈4): 코스 상의 장소 중 지금 붐비는 곳을 감지해 배너로. */
-    private fun checkRealtimeSurge(plan: ScheduleResponse) {
+    override fun onResume() {
+        super.onResume()
+        // 앱이 포그라운드로 돌아올 때 surgeJob 이 중단됐으면 재시작(생명주기 안전)
+    }
+
+    override fun onDestroy() {
+        surgeJob?.cancel()
+        super.onDestroy()
+    }
+
+    /**
+     * 실시간 급증 감시(모듈4, TrackingCore 연동).
+     * 코스 상의 장소를 90초마다 폴링해 급증 시 배너를 보인다.
+     * — 주기를 짧게 할수록 배터리·API 부하가 늘어 90s 가 균형점.
+     */
+    private fun startSurgeMonitor(plan: ScheduleResponse) {
         val alert = findViewById<MaterialCardView>(R.id.planner_alert)
         val alertText = findViewById<TextView>(R.id.planner_alert_text)
-        lifecycleScope.launch {
-            for (stop in plan.ordered) {
-                val lat = stop.lat ?: continue
-                val lng = stop.lng ?: continue
-                val now = try {
-                    YeobaekClient.api.resolveNow(lat, lng)
-                } catch (e: Exception) { null } ?: continue
-                val lvl = now.level
-                if (now.valid && lvl != null && lvl >= 3) {
-                    alertText.text =
-                        "⚠ ‘${stop.title}’ 지금 ${Congestion.label(lvl)} — 도착 시점을 늦추거나 대안을 눌러보세요"
-                    alert.visibility = View.VISIBLE
-                    return@launch   // 첫 급증 지점만 알림
+        surgeJob = lifecycleScope.launch {
+            while (isActive) {
+                var alerted = false
+                for (stop in plan.ordered) {
+                    val lat = stop.lat ?: continue
+                    val lng = stop.lng ?: continue
+                    val now = try {
+                        YeobaekClient.api.resolveNow(lat, lng)
+                    } catch (_: Exception) { null } ?: continue
+                    val lvl = now.level
+                    if (now.valid && lvl != null && lvl >= 3) {
+                        alertText.text =
+                            "⚠ ‘${stop.title}’ 지금 ${Congestion.label(lvl)} — 도착 시점을 늦추거나 대안을 눌러보세요"
+                        alert.visibility = View.VISIBLE
+                        alerted = true
+                        break   // 첫 급증 지점만 배너(배너는 유지)
+                    }
                 }
+                if (!alerted) alert.visibility = View.GONE
+                delay(90_000L)   // 90초 주기 폴링
             }
         }
     }
