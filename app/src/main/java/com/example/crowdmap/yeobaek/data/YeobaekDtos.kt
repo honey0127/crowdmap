@@ -184,13 +184,13 @@ object Congestion {
     fun label(level: Int): String = when (level) {
         1 -> "여유"; 2 -> "보통"; 3 -> "약간 붐빔"; 4 -> "붐빔"; else -> "보통"
     }
-    /** 배지 배경 색상(ARGB) — 시맨틱 히트 스케일(여유→붐빔). */
+    /** 배지 배경 색상(ARGB) — 시맨틱 히트 스케일(여유→붐빔), 채도 낮춤(Compose 밀도 토큰과 통일). */
     fun color(level: Int): Int = when (level) {
-        1 -> 0xFF2E9E5B.toInt()  // 여유
-        2 -> 0xFFE0A11B.toInt()  // 보통
-        3 -> 0xFFF0682B.toInt()  // 약간 붐빔
-        4 -> 0xFFDB4437.toInt()  // 붐빔
-        else -> 0xFF8A8F8B.toInt()
+        1 -> 0xFF3F8266.toInt()  // 여유 · 세이지
+        2 -> 0xFFB4863F.toInt()  // 보통 · 앰버
+        3 -> 0xFFAF585A.toInt()  // 약간 붐빔 · 뮤트 크림슨
+        4 -> 0xFF93454A.toInt()  // 붐빔
+        else -> 0xFF8A929C.toInt()
     }
     fun isHigh(level: Int): Boolean = level >= 3
     /** 구글맵 마커 색조(0~360). 여유=초록 … 붐빔=빨강. 레벨 없으면 브랜드 그린. */

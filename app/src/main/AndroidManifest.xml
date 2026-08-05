@@ -80,6 +80,19 @@
             android:theme="@style/Theme.Yeobaek" android:exported="false" />
         <activity android:name=".yeobaek.ui.CardActivity"
             android:theme="@style/Theme.Yeobaek" android:exported="false" />
+
+        <!-- ── 여백 Compose 레이어(슬레이트 틸 리디자인) ── -->
+        <!-- 기존 View 화면과 공존. 데모에서 바로 열 수 있도록 별도 런처로 노출. -->
+        <activity
+            android:name=".yeobaek.compose.YeobaekComposeActivity"
+            android:label="여백 ✦"
+            android:theme="@style/Theme.Yeobaek"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>
