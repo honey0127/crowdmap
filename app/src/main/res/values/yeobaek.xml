@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ── 여백(Yeobaek) 팔레트: 네이버지도 그린 + 테이블링 종이톤 (승인 시안) ── -->
-    <color name="ye_primary">#0FB86B</color>          <!-- 브랜드 그린(지도/CTA) -->
+    <!-- ── 여백(Yeobaek) 팔레트: Deep Slate Teal "차분한 지성" (Compose 레이어와 통일) ── -->
+    <color name="ye_primary">#17595E</color>          <!-- 브랜드 딥 슬레이트 틸(CTA) -->
     <color name="ye_on_primary">#FFFFFF</color>
-    <color name="ye_primary_container">#D8F3E3</color>
-    <color name="ye_on_primary_container">#08492F</color>
-    <color name="ye_secondary">#FF6A45</color>          <!-- 코럴 강조(테이블링) -->
-    <color name="ye_background">#F7F6F2</color>          <!-- 페이퍼 화이트 -->
+    <color name="ye_primary_container">#E7F1F0</color>  <!-- 브랜드 틴트 -->
+    <color name="ye_on_primary_container">#0C3134</color>
+    <color name="ye_secondary">#0F3E42</color>          <!-- 브랜드 딥(보조 강조) -->
+    <color name="ye_background">#F9FAFB</color>          <!-- 초크 화이트 -->
     <color name="ye_surface">#FFFFFF</color>
-    <color name="ye_surface_variant">#EEEDE7</color>
-    <color name="ye_on_surface">#1C1F1D</color>
-    <color name="ye_on_surface_variant">#5E635F</color>
-    <color name="ye_outline">#E2E0D8</color>
-    <color name="ye_accent">#FF6A45</color>
+    <color name="ye_surface_variant">#EEF3F3</color>
+    <color name="ye_on_surface">#111827</color>         <!-- 차콜 -->
+    <color name="ye_on_surface_variant">#6B7280</color> <!-- 슬레이트 그레이 -->
+    <color name="ye_outline">#DEE7E7</color>            <!-- 틸 바이어스 헤어라인 -->
+    <color name="ye_accent">#17595E</color>
 
-    <!-- 혼잡 레벨 색(시맨틱 히트 스케일: 여유→붐빔) -->
-    <color name="ye_lv1">#2E9E5B</color>
-    <color name="ye_lv2">#E0A11B</color>
-    <color name="ye_lv3">#F0682B</color>
-    <color name="ye_lv4">#DB4437</color>
+    <!-- 혼잡 레벨 색(시맨틱 히트 스케일, 채도 낮춤: 여유→붐빔) -->
+    <color name="ye_lv1">#3F8266</color>  <!-- 세이지 -->
+    <color name="ye_lv2">#B4863F</color>  <!-- 앰버 -->
+    <color name="ye_lv3">#AF585A</color>  <!-- 뮤트 크림슨 -->
+    <color name="ye_lv4">#93454A</color>
 
     <!-- ── 테마 ── -->
     <style name="Theme.Yeobaek" parent="Theme.Material3.Light.NoActionBar">

@@ -26,9 +26,10 @@
 - **모양**: card 18dp · hero/alt 24dp · pill 999. 그림자 대신 1dp 틸-바이어스 보더(`Modifier.hairline`).
 - **다크 테마** 완비(`isSystemInDarkTheme`).
 
-> ⚠️ **팔레트 분기점**: 기존 `res/values/yeobaek.xml` 은 View 화면용 **그린(#0FB86B) 승인 시안**이다.
-> 이 Compose 레이어는 새 브리프의 **슬레이트 틸**을 따른다. 최종적으로 하나로 통일할지(그린 유지 vs
-> 틸 채택) 팀 결정이 필요하다 — 지금은 두 시스템이 화면 단위로 분리돼 공존한다.
+> ✅ **팔레트 통일(슬레이트 틸)**: 팀 결정에 따라 View/XML 화면도 틸로 통일했다.
+> `res/values/yeobaek.xml`(브랜드·밀도 토큰)과 `Congestion.color()`(View 배지)를 Compose 밀도
+> 토큰과 동일한 값으로 맞췄다 — 그린(#0FB86B) → 슬레이트 틸(#17595E), 밝은 혼잡색 → 채도 낮춘
+> 세이지/앰버/뮤트 크림슨. 이제 View·Compose 두 레이어가 같은 브랜드로 렌더된다.
 
 ## 빌드 설정 (추가된 것)
 
@@ -55,13 +56,23 @@ Android Studio 에서 최초 sync·빌드가 필요하다. (기존 앱 자체도
 - **온보딩 인디케이터**: 현재 페이지 도트가 `animateDpAsState` 로 늘어남.
 - 실기기에선 스왑 성공에 햅틱 1회(`HapticFeedbackType.LongPress`) 추가 권장.
 
-## 실서버 연결 (다음 단계)
+## 실서버 연결 (구현됨) — `compose/ui/`
 
-각 `*Screen` 을 감싸는 얇은 `ViewModel` 을 두고 `viewModelScope` 에서:
+각 화면은 얇은 ViewModel + Route(stateful) 로 실서버(YeobaekApi)에 연결된다.
 
-```kotlin
-val resp = YeobaekClient.api.match(MatchRequest(contentId = id))
-_uiState.value = resp   // 화면은 이 상태를 그대로 인자로 받음
-```
+| 파일 | 내용 |
+|---|---|
+| `ui/UiState.kt` | `UiState<T>`(Loading/Success/Error) + `StateHost`(공통 로딩·에러·재시도 UI) |
+| `ui/ViewModels.kt` | Dashboard/Schedule/Map/PlaceDetail ViewModel — `viewModelScope` 로 API 호출 |
+| `ui/StatefulScreens.kt` | `DashboardRoute`/`ScheduleRoute`/`MapRoute`/`PlaceDetailRoute` — VM 구독 → 순수 화면 |
 
-`SERVER_IP` 는 `local.properties` → `BuildConfig.SERVER_IP`(기존 앱과 공유), 포트 8000.
+- 흐름: `Route` 가 `LaunchedEffect(params)` 로 `vm.load(...)` → `StateFlow<UiState>` 구독 →
+  Success 면 순수 화면 렌더, Error 면 재시도/**샘플로 보기**(오프라인 시연 안전) 노출.
+- `YeobaekComposeActivity` 하단탭이 이제 Route(실데이터)를 사용. 데모 진입 기본값은 파일 상단 상수
+  (`DEMO_CONTENT_ID` 등) — 실제 앱은 검색/지도 선택값을 네비 인자로 전달.
+- ViewModel 은 no-arg 생성자(모든 파라미터 기본값) → `viewModel()` 기본 팩토리로 생성(DI 불필요).
+- `SERVER_IP` 는 `local.properties` → `BuildConfig.SERVER_IP`(기존 앱과 공유), 포트 8000.
+
+### 서버 미가동 시 시연
+각 화면 에러 상태의 **"샘플로 보기"** → `SampleData` 로 완성 화면을 그린다(실측 서울 명소).
+심사장에서 서버가 안 떠도 UI 전체를 시연할 수 있다.

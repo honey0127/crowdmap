@@ -18,6 +18,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.crowdmap.yeobaek.compose.theme.YeobaekTheme
+import com.example.crowdmap.yeobaek.compose.ui.DashboardRoute
+import com.example.crowdmap.yeobaek.compose.ui.MapRoute
+import com.example.crowdmap.yeobaek.compose.ui.ScheduleRoute
 
 /**
  * 여백 Compose 레이어 진입점 — 기존 View 기반 화면(YeobaekHomeActivity 등)에서
@@ -33,6 +36,13 @@ class YeobaekComposeActivity : ComponentActivity() {
         setContent { YeobaekTheme { YeobaekApp() } }
     }
 }
+
+// 데모 진입 기본값(실제 앱은 검색/지도 선택값을 네비 인자로 전달).
+private const val DEMO_CONTENT_ID = 900005L        // 북촌한옥마을
+private const val DEMO_START_TIME = "2026-10-11T10:00:00"
+private val DEMO_STOPS = listOf(900001L, 900016L, 900008L) // 경복궁·국립중앙박물관·명동
+private const val DEMO_LAT = 37.5796
+private const val DEMO_LNG = 126.9770
 
 private enum class Tab(val route: String, val label: String, val glyph: String) {
     Discover("discover", "발견", "◈"),
@@ -72,15 +82,17 @@ private fun YeobaekApp() {
             }
         },
     ) { inner ->
+        // 데모 진입 기본값. 실제 플로우에선 검색/지도에서 고른 값을 네비 인자로 넘긴다.
+        // 서버 미가동 시 각 화면의 '샘플로 보기'로 오프라인 시연 가능.
         NavHost(nav, startDestination = Tab.Discover.route, modifier = Modifier.padding(inner)) {
             composable(Tab.Discover.route) {
-                DashboardScreen(match = SampleData.match, sourcePct = SampleData.heroPct, sourceLevel = SampleData.heroLevel)
+                DashboardRoute(contentId = DEMO_CONTENT_ID)
             }
             composable(Tab.Schedule.route) {
-                ScheduleScreen(schedule = SampleData.schedule, dwellMin = SampleData.dwellMin, transit = SampleData.transit)
+                ScheduleRoute(startTime = DEMO_START_TIME, stops = DEMO_STOPS)
             }
             composable(Tab.Map.route) {
-                MapHeatmapScreen(places = SampleData.heatmap)
+                MapRoute(lat = DEMO_LAT, lng = DEMO_LNG)
             }
         }
     }
