@@ -9,7 +9,13 @@
       "PowerShell(netstat *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\" -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\\\\app\" -Recurse -Filter \"*.kt\" -File)"
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\\\\app\" -Recurse -Filter \"*.kt\" -File)",
+      "Bash(python -c \"import fastapi; import uvicorn; print\\('FastAPI OK'\\)\")",
+      "Bash(python -c \"import numpy; print\\('numpy OK'\\)\")",
+      "PowerShell(python --version; python -c \"import sys; print\\(sys.executable\\)\")",
+      "PowerShell(python -c \"import fastapi; print\\('FastAPI OK'\\)\" 2>&1; python -c \"import numpy; print\\('numpy OK'\\)\" 2>&1; python -c \"import requests; print\\('requests OK'\\)\" 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\\\\yeobaek\\\\.venv\\\\bin\\\\python\" -c \"import fastapi; import numpy; print\\('OK'\\)\")",
+      "PowerShell($env:PYTHONPATH = \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\\\\yeobaek\"; & \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\\\\yeobaek\\\\.venv\\\\bin\\\\python\" -c \"import fastapi; import numpy; print\\('FastAPI/numpy OK'\\)\" 2>&1)"
     ]
   }
 }

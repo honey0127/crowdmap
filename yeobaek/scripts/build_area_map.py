@@ -25,6 +25,12 @@ except Exception as e:
     raise SystemExit(2)
 
 
+# 서울 예보지점과 이 거리(km) 안에 있는 장소만 매핑한다.
+# 전국 수집 시 서울 밖 장소가 수백 km 떨어진 서울 지점의 혼잡도를 잘못 물려받지 않게 한다.
+# (매핑이 없으면 예보는 중립'보통'으로 폴백 — 서울 밖에서는 이것이 올바른 동작)
+MAX_MAP_DIST_KM = 4.0
+
+
 def main() -> int:
     repository.init_db()
     client = ye.SeoulCityDataForecastClient("")  # 좌표 매핑엔 키 불필요
@@ -35,10 +41,11 @@ def main() -> int:
         return 1
 
     con = sqlite3.connect(settings.DB_PATH)
-    mapped = 0
+    mapped = far = 0
     for p in places:
         name, dist_km, found = client.nearest_area(p["lat"], p["lng"])
-        if not found:
+        if not found or dist_km > MAX_MAP_DIST_KM:
+            far += 1                     # 서울 예보권 밖 → 매핑 안 함(중립 폴백)
             continue
         con.execute(
             "INSERT INTO place_area_map(content_id,seoul_area_name,dist_km) VALUES (?,?,?)"
@@ -49,7 +56,8 @@ def main() -> int:
         mapped += 1
     con.commit()
     con.close()
-    print(f"완료: {mapped}개 장소 → 서울 예보지점 매핑 (place_area_map)")
+    print(f"완료: {mapped}개 매핑(서울 예보권 ≤{MAX_MAP_DIST_KM}km), "
+          f"{far}개 서울 밖 → 중립 폴백 (place_area_map)")
     return 0
 
 

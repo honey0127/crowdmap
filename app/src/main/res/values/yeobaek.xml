@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ── 여백(Yeobaek) 팔레트: 네이버지도 그린 + 테이블링 종이톤 (승인 시안) ── -->
+    <color name="ye_primary">#0FB86B</color>          <!-- 브랜드 그린(지도/CTA) -->
+    <color name="ye_on_primary">#FFFFFF</color>
+    <color name="ye_primary_container">#D8F3E3</color>
+    <color name="ye_on_primary_container">#08492F</color>
+    <color name="ye_secondary">#FF6A45</color>          <!-- 코럴 강조(테이블링) -->
+    <color name="ye_background">#F7F6F2</color>          <!-- 페이퍼 화이트 -->
+    <color name="ye_surface">#FFFFFF</color>
+    <color name="ye_surface_variant">#EEEDE7</color>
+    <color name="ye_on_surface">#1C1F1D</color>
+    <color name="ye_on_surface_variant">#5E635F</color>
+    <color name="ye_outline">#E2E0D8</color>
+    <color name="ye_accent">#FF6A45</color>
+
+    <!-- 혼잡 레벨 색(시맨틱 히트 스케일: 여유→붐빔) -->
+    <color name="ye_lv1">#2E9E5B</color>
+    <color name="ye_lv2">#E0A11B</color>
+    <color name="ye_lv3">#F0682B</color>
+    <color name="ye_lv4">#DB4437</color>
+
+    <!-- ── 테마 ── -->
+    <style name="Theme.Yeobaek" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/ye_primary</item>
+        <item name="colorOnPrimary">@color/ye_on_primary</item>
+        <item name="colorPrimaryContainer">@color/ye_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/ye_on_primary_container</item>
+        <item name="colorSecondary">@color/ye_secondary</item>
+        <item name="android:colorBackground">@color/ye_background</item>
+        <item name="colorSurface">@color/ye_surface</item>
+        <item name="colorSurfaceVariant">@color/ye_surface_variant</item>
+        <item name="colorOnSurface">@color/ye_on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/ye_on_surface_variant</item>
+        <item name="colorOutline">@color/ye_outline</item>
+        <item name="android:statusBarColor">@color/ye_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <!-- 텍스트 스타일 -->
+    <style name="Ye.Title" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/ye_on_surface</item>
+    </style>
+    <style name="Ye.Section" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textColor">@color/ye_on_surface_variant</item>
+    </style>
+</resources>

@@ -68,6 +68,26 @@ class EngineState:
     def forecast(self, area_name: str, arrival_unix: int):
         return self.provider.get(area_name, int(arrival_unix))
 
+    def resolve_now(self, lat: float, lng: float):
+        """(lat,lng) 실시간 현재 혼잡 -> (level, ratio, valid) 또는 None. 모듈4 급증 감지용."""
+        if not self.available or self.client is None:
+            return None
+        try:
+            level, ratio, valid = self.client.resolve_now(float(lat), float(lng))
+        except Exception:
+            return None
+        return (int(level), float(ratio), bool(valid)) if valid else None
+
+    def nearest_area(self, lat: float, lng: float):
+        """(lat,lng) 최근접 서울 예보지점 -> (name, dist_km) 또는 None(엔진 부재/미발견)."""
+        if not self.available or self.client is None:
+            return None
+        try:
+            name, dist, found = self.client.nearest_area(float(lat), float(lng))
+        except Exception:
+            return None
+        return (name, dist) if found else None
+
     def make_stop(self, content_id, lat, lng, area_name, dwell_sec, twins=None):
         s = ye.SchedStop()
         s.content_id = int(content_id)
@@ -91,8 +111,10 @@ class EngineState:
     def weights(self, congestion: float, distance: float, similarity: float):
         return ye.SchedWeights(congestion, distance, similarity)
 
-    def optimize(self, stops, start_unix: int, weights, allow_substitution: bool):
-        return self.scheduler.optimize(stops, int(start_unix), weights, allow_substitution)
+    def optimize(self, stops, start_unix: int, weights, allow_substitution: bool,
+                 keep_order: bool = False):
+        return self.scheduler.optimize(
+            stops, int(start_unix), weights, allow_substitution, keep_order)
 
 
 engine_state = EngineState()
