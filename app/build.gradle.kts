@@ -3,6 +3,7 @@
 plugins {
     id("com.android.application") // 버전 정보를 빼고 ID만 적습니다.
     id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.compose.compiler) // 여백 Compose 레이어 (Kotlin 2.0 Compose Compiler)
 }
 
 val localProperties = Properties().apply {
@@ -31,6 +32,7 @@ android {
 
     buildFeatures {
         buildConfig = true
+        compose = true // 여백 Compose 레이어
     }
 
     buildTypes {
@@ -75,4 +77,17 @@ dependencies {
 // 여백: Retrofit2 + Gson (FastAPI /schedule·/match·/card)
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+
+    // 여백 Compose 레이어 (기존 View/XML 화면과 공존, 슬레이트 틸 디자인 시스템)
+    val composeBom = platform(libs.androidx.compose.bom)
+    implementation(composeBom)
+    androidTestImplementation(composeBom)
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    debugImplementation(libs.androidx.ui.tooling)
 }
