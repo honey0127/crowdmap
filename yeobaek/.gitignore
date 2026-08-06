@@ -1,6 +1,7 @@
 # 빌드 산출물
 engine/build/
 **/*.so
+**/*.pyd
 **/__pycache__/
 *.pyc
 

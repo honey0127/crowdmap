@@ -8,6 +8,7 @@
 .so 가 없으면 EngineState.available=False 로 두고, 라우터가 503 을 명확히 반환한다.
 """
 from __future__ import annotations
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -20,6 +21,17 @@ _HERE = Path(__file__).resolve().parent
 for _p in (_HERE, _HERE.parent / "engine" / "build"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
+
+# Windows: Python 3.8+ 부터 확장 모듈 DLL 탐색에 PATH 를 자동으로 쓰지 않는다.
+# yeobaek_engine(.pyd) 은 MSYS2 ucrt64 툴체인(libcurl 등)에 링크되므로 그 bin 을
+# 명시적으로 등록해야 임포트 시 DLL load failed 가 나지 않는다.
+if os.name == "nt" and hasattr(os, "add_dll_directory"):
+    for _dll_dir in (Path(r"C:\msys64\ucrt64\bin"), Path(r"C:\msys64\mingw64\bin")):
+        if _dll_dir.is_dir():
+            try:
+                os.add_dll_directory(str(_dll_dir))
+            except OSError:
+                pass
 
 try:
     import yeobaek_engine as ye  # type: ignore
