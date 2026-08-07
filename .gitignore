@@ -19,8 +19,5 @@ app/build/
 *.keystream
 *.len
 .env
-server/.env
-server/build/
-server/build_test/
 logs/
 *.bak

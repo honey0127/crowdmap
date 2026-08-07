@@ -64,8 +64,6 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-    // 위치 서비스 (Fused Location Provider)
-    implementation("com.google.android.gms:play-services-location:21.0.1")
 // 코루틴 (비동기 처리)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 // ViewModel

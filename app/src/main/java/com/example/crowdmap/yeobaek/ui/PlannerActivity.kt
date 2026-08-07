@@ -85,7 +85,7 @@ class PlannerActivity : AppCompatActivity() {
     }
 
     /**
-     * 실시간 급증 감시(모듈4, TrackingCore 연동).
+     * 실시간 급증 감시(모듈4) — 서버 /resolve_now 폴링 기반.
      * 코스 상의 장소를 90초마다 폴링해 급증 시 배너를 보인다.
      * — 주기를 짧게 할수록 배터리·API 부하가 늘어 90s 가 균형점.
      */

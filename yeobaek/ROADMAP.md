@@ -78,7 +78,7 @@
 
 ### 🟡 P2 — 모듈4 실시간 스왑 (Phase 4-5)
 - [x] `PlannerActivity.startSurgeMonitor()` — 코스 stop 을 **90초마다** 폴링해 `resolve_now` 급증 감지·배너 표시·배너 자동 소멸. `surgeJob`(lifecycleScope) 로 액티비티 생명주기 연동.
-- [ ] (확장) CrowdMap `TrackingCore` Foreground Service 로 화면이 꺼진 뒤에도 급증 감시·알림 푸시.
+- [ ] (확장) 자체 Foreground Service 로 화면이 꺼진 뒤에도 급증 감시·알림 푸시. (CrowdMap `TrackingCore` 는 레포에서 제거됨 — 필요 시 git 이력에서 참고: `git show fbd7cf1:app/src/main/java/com/example/crowdmap/core/TrackingCore.kt`)
 
 ### 🟡 P2 — 통합·안정화·심사 산출물 (Phase 5)
 - [x] **server 버그 수정**: `server/api/places.py` — `HTTPException` 누락 import 추가(`disperse`·`tats` 엔드포인트 정상화).
@@ -116,7 +116,8 @@
 
 ## 4. 알아두면 좋은 것 (주의·함정)
 
-- **브랜치**: 이 작업은 **`honey`** 에서 진행. 자동 생성됐던 `claude/code-writing-kodsp8`에만 있던 커밋 5개(`signal/*.kt` 등)는 `honey`에 미포함 — 필요하면 별도 병합.
+- **브랜치**: 이 작업은 **`honey`** 에서 진행.
+- **레포 정리(2026-08-07)**: CrowdMap 전용 코드(Android `MainActivity`·`ble/`·`core/`·`location/`·`network/`·`service/`·`signal/`, 루트 C++ `server/`·`CMakeLists.txt`·`memorytest`·`start.sh`)를 모두 제거해 **여백 단독 빌드**로 전환. 삭제분은 git 이력에 남아 있어 `git show fbd7cf1:<경로>` 로 복원 가능.
 - **키 없을 때**: 예보는 네트워크 미시도·중립(보통) 폴백. 그래서 매칭/스케줄러/카드는 키 없이도 돌지만, **혼잡도 수치는 전부 2로 고정**되어 스케줄 재정렬/치환이 발동하지 않는다(정상 동작이지 버그 아님).
 - **`.so` 재빌드 시점**: `engine/` 헤더를 고치면 반드시 `cmake --build build` 재실행(빌드 산출물은 gitignore, `server/` 옆으로 자동 복사).
 - **데모 시각 제약(실측 확정)**: 예보가 **당일 ~12시간 앞까지**만 나오므로, 데모는 반드시 **오늘·현재 이후 12시간 이내 당일 코스**로. 그 밖의 미래 일정은 예보 부재 → 중립 폴백.

@@ -181,5 +181,5 @@ OpenAPI 활용: **TourAPI(한국관광공사)** = 소개글/좌표/카테고리 
 - FastAPI `TestClient` E2E — `/health`·`/match`·`/schedule`·`/card` 실제 응답(seed DB)
 
 ## 로드맵 (미구현/확장)
-- Phase 4 Android 3화면(Retrofit) + 모듈4 `TrackingCore` 실시간 급증 스왑 — `router.resolve_now` 노출 완료, 앱 연동은 확장 단계
+- Phase 4 Android 3화면(Retrofit) + 모듈4 실시간 급증 스왑 — `router.resolve_now` 노출 완료, 앱은 `PlannerActivity.startSurgeMonitor()` 폴링으로 연동
 - 전국 예보 확장(한국관광 데이터랩 혼잡도), C++ 코사인 최적화, 실측 라우팅 API
