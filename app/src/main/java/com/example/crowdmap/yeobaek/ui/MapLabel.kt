@@ -4,65 +4,66 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.DisplayMetrics
 import kotlin.math.max
 
 /**
- * 네이버지도식 장소 라벨.
+ * 지도 위 장소 라벨 — '꼬리 달린 알약(pill) 칩'.
  *
- * 큼직한 핀 대신 **작은 점 + 장소 이름**을 그린다. 핀만 잔뜩 찍히면 무엇이 무엇인지
- * 구분이 안 되므로, 이름을 직접 보여주고 점 색으로 혼잡도를 표현한다.
- * 글자는 흰 테두리(halo)를 둘러 어떤 지도 배경 위에서도 읽히게 한다.
+ * 글자만 띄우면 구글 지도가 원래 그리는 지명(안국동·재동…)과 섞여 무엇이 우리 장소인지
+ * 구분되지 않는다. 그래서 **채운 배경 + 흰 글씨 + 흰 테두리**로 칩을 그려 지도 위에서
+ * 확실히 튀게 하고, 칩 아래 작은 꼬리가 실제 좌표를 가리키게 한다.
+ * 칩 색 자체가 혼잡 레벨을 나타내므로 색과 이름을 한 번에 읽을 수 있다.
  */
 object MapLabel {
 
-    /** 라벨이 너무 길어지면 지도를 덮으므로 줄여서 표시. */
-    private const val MAX_CHARS = 9
+    /** 칩이 길어지면 지도를 덮으므로 줄여서 표시. */
+    private const val MAX_CHARS = 8
 
     fun shorten(title: String): String =
         if (title.length <= MAX_CHARS) title else title.take(MAX_CHARS - 1) + "…"
 
-    /** 그려진 라벨 + 지도 좌표에 맞출 앵커(점 중심). */
+    /** 그려진 라벨 + 지도 좌표에 맞출 앵커(꼬리 끝). */
     data class Label(val bitmap: Bitmap, val anchorX: Float, val anchorY: Float)
 
     /**
-     * @param dotColor  점 색(혼잡 레벨 색)
-     * @param emphasize 담은 장소처럼 강조할 때 true — 글자를 진하게, 점을 크게
+     * @param fillColor 칩 배경색(혼잡 레벨 색 또는 브랜드 색)
+     * @param emphasize 담은 장소처럼 강조할 때 true — 글자·칩을 조금 키운다
      */
     fun render(
         dm: DisplayMetrics,
         title: String,
-        dotColor: Int,
+        fillColor: Int,
         emphasize: Boolean = false,
     ): Label {
         val d = dm.density
         val text = shorten(title)
 
-        val dotR = (if (emphasize) 6.5f else 5f) * d
-        val gap = 3f * d
-        val haloW = 3.5f * d
-        val pad = 2f * d
+        val padH = 9f * d
+        val padV = 5f * d
+        val borderW = 2f * d          // 흰 테두리 — 칩끼리, 배경과 분리
+        val tailH = 6f * d
+        val tailW = 9f * d
+        val shadowPad = 1.5f * d
 
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = (if (emphasize) 12.5f else 11.5f) * d
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
-            color = if (emphasize) Color.parseColor("#0F3E42") else Color.parseColor("#2B3138")
-        }
-        val haloPaint = Paint(textPaint).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = haloW
-            strokeJoin = Paint.Join.ROUND
             color = Color.WHITE
         }
-
         val fm = textPaint.fontMetrics
         val textH = fm.descent - fm.ascent
         val textW = textPaint.measureText(text)
 
-        val w = max(textW + haloW * 2 + pad * 2, dotR * 2 + pad * 2)
-        val h = dotR * 2 + gap + textH + pad
+        val pillW = textW + padH * 2
+        val pillH = textH + padV * 2
+        val w = pillW + borderW * 2 + shadowPad * 2
+        val h = pillH + borderW * 2 + tailH + shadowPad * 2
+
         val bmp = Bitmap.createBitmap(
             max(1, Math.ceil(w.toDouble()).toInt()),
             max(1, Math.ceil(h.toDouble()).toInt()),
@@ -71,21 +72,42 @@ object MapLabel {
         val c = Canvas(bmp)
         val cx = bmp.width / 2f
 
-        // 점: 흰 테두리를 둘러 배경과 분리
-        val dotCy = dotR
-        c.drawCircle(cx, dotCy, dotR, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val left = (bmp.width - pillW) / 2f
+        val top = borderW + shadowPad
+        val pill = RectF(left, top, left + pillW, top + pillH)
+        val r = pillH / 2f     // 알약 모양
+
+        // 1) 옅은 그림자 — 밝은 지도 위에서 칩이 떠 보이게
+        val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(38, 0, 0, 0) }
+        c.drawRoundRect(
+            RectF(pill.left, pill.top + shadowPad, pill.right, pill.bottom + shadowPad),
+            r, r, shadow)
+
+        // 2) 흰 테두리(꼬리까지 포함해 한 번에)
+        val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
-        })
-        c.drawCircle(cx, dotCy, dotR - 1.5f * d, Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = dotColor
-        })
+            style = Paint.Style.STROKE
+            strokeWidth = borderW * 2
+            strokeJoin = Paint.Join.ROUND
+        }
+        val tailPath = Path().apply {
+            moveTo(cx - tailW / 2f, pill.bottom - 1f)
+            lineTo(cx + tailW / 2f, pill.bottom - 1f)
+            lineTo(cx, pill.bottom + tailH)
+            close()
+        }
+        c.drawRoundRect(pill, r, r, border)
+        c.drawPath(tailPath, border)
 
-        // 이름: 흰 halo → 본문 순서로 그려 가독성 확보
-        val baseline = dotR * 2 + gap - fm.ascent
-        c.drawText(text, cx, baseline, haloPaint)
-        c.drawText(text, cx, baseline, textPaint)
+        // 3) 본체 채우기
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = fillColor }
+        c.drawRoundRect(pill, r, r, fill)
+        c.drawPath(tailPath, fill)
 
-        // 앵커는 '점 중심' — 실제 좌표에 점이 놓이고 이름은 그 아래에 걸린다.
-        return Label(bmp, 0.5f, dotCy / bmp.height)
+        // 4) 이름
+        c.drawText(text, cx, pill.top + padV - fm.ascent, textPaint)
+
+        // 앵커는 꼬리 끝 — 실제 좌표를 정확히 가리킨다.
+        return Label(bmp, 0.5f, (pill.bottom + tailH) / bmp.height)
     }
 }

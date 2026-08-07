@@ -248,10 +248,13 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
                 // 히트맵: 주변 명소 + 현재 혼잡 레벨(핀 색) + 한적함 지수
                 val res = YeobaekClient.api.heatmap(center.latitude, center.longitude, radius)
                 val fresh = res.results.filter { !selectedStops.containsKey(it.contentId) }
-                recoHeader.text = "이 지역 추천 · 플래너에 넣을까요?"
+                // 빈 지역에서 아무 표시도 없으면 고장처럼 보인다 — 왜 비었는지 알려준다.
+                recoHeader.text = if (fresh.isEmpty())
+                    "이 지역엔 등록된 명소가 없어요"
+                else
+                    "이 지역 추천 · 플래너에 넣을까요?"
                 recoAdapter.submit(fresh)
-                if (!isPlaceInfoShown())
-                    recoPanel.visibility = if (fresh.isEmpty()) View.GONE else View.VISIBLE
+                if (!isPlaceInfoShown()) recoPanel.visibility = View.VISIBLE
                 renderNearbyMarkers(fresh)
                 loadReports()
             } catch (e: Exception) {
@@ -283,7 +286,8 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
             val lat = p.lat ?: continue
             val lng = p.lng ?: continue
             val pos = LatLng(lat, lng)
-            val label = MapLabel.render(dm, p.title, Congestion.color(p.level ?: 2))
+            // 레벨이 없으면(예보권 밖·키 미설정) 중립 회색 — 모르는 걸 '보통'으로 속이지 않는다.
+            val label = MapLabel.render(dm, p.title, Congestion.color(p.level ?: 0))
 
             // 화면상 차지할 영역을 구해 이미 놓인 라벨과 겹치는지 확인
             val pt = proj.toScreenLocation(pos)
