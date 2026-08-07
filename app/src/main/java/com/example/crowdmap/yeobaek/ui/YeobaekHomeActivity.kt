@@ -1,6 +1,7 @@
 package com.example.crowdmap.yeobaek.ui
 
 import android.content.Intent
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.View
 import android.widget.ProgressBar
@@ -9,6 +10,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -259,19 +261,43 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    /** 주변 추천 장소를 그린 핀으로 지도에 표시(탭하면 정보 카드). */
+    /**
+     * 주변 추천 장소를 '점 + 이름' 라벨로 표시(탭하면 정보 시트).
+     *
+     * 핀만 잔뜩 찍히면 구분이 안 되므로 이름을 직접 그린다(네이버지도식).
+     * 라벨끼리 겹치면 읽을 수 없으니, 화면 좌표로 겹침을 검사해 겹치는 것은 생략한다.
+     * 한적한 곳(quiet_score 높은 순)을 먼저 배치해 추천 대상이 우선 살아남게 한다.
+     * 지도를 확대하면 간격이 벌어져 가려졌던 이름이 다시 나타난다.
+     */
     private fun renderNearbyMarkers(list: List<PlaceResult>) {
         val gmap = map ?: return
         nearbyMarkers.keys.forEach { it.remove() }
         nearbyMarkers.clear()
-        for (p in list) {
+
+        val proj = gmap.projection
+        val dm = resources.displayMetrics
+        val placed = ArrayList<Rect>()
+        val margin = (2 * dm.density).toInt()
+
+        for (p in list.sortedByDescending { it.quietScore ?: 0 }) {
             val lat = p.lat ?: continue
             val lng = p.lng ?: continue
-            val snippet = p.quietScore?.let { "한적함 $it" }
+            val pos = LatLng(lat, lng)
+            val label = MapLabel.render(dm, p.title, Congestion.color(p.level ?: 2))
+
+            // 화면상 차지할 영역을 구해 이미 놓인 라벨과 겹치는지 확인
+            val pt = proj.toScreenLocation(pos)
+            val left = pt.x - label.bitmap.width / 2
+            val top = pt.y - (label.anchorY * label.bitmap.height).toInt()
+            val rect = Rect(left - margin, top - margin,
+                left + label.bitmap.width + margin, top + label.bitmap.height + margin)
+            if (placed.any { Rect.intersects(it, rect) }) continue
+            placed.add(rect)
+
             val m = gmap.addMarker(
-                MarkerOptions().position(LatLng(lat, lng)).title(p.title)
-                    .snippet(snippet)
-                    .icon(BitmapDescriptorFactory.defaultMarker(Congestion.hue(p.level)))  // 혼잡도 색
+                MarkerOptions().position(pos)
+                    .icon(BitmapDescriptorFactory.fromBitmap(label.bitmap))
+                    .anchor(label.anchorX, label.anchorY)
             ) ?: continue
             nearbyMarkers[m] = p
         }
@@ -584,13 +610,17 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         })
     }
 
-    /** 담은 장소 마커(코럴). 이미 있으면 스킵. */
+    /** 담은 장소 라벨 — 브랜드 색 점 + 진한 이름으로 주변 추천과 구분. 이미 있으면 스킵. */
     private fun addSelectedMarker(id: Long, stop: Stop) {
         val gmap = map ?: return
         if (!stop.hasLatLng || selectedMarkers.containsKey(id)) return
+        val brand = ContextCompat.getColor(this, R.color.ye_primary)
+        val label = MapLabel.render(resources.displayMetrics, stop.title, brand, emphasize = true)
         val m = gmap.addMarker(
-            MarkerOptions().position(LatLng(stop.lat, stop.lng)).title(stop.title)
-                .icon(BitmapDescriptorFactory.defaultMarker(12f))   // 코럴(담은 장소)
+            MarkerOptions().position(LatLng(stop.lat, stop.lng))
+                .icon(BitmapDescriptorFactory.fromBitmap(label.bitmap))
+                .anchor(label.anchorX, label.anchorY)
+                .zIndex(1f)   // 담은 곳은 항상 위에
         )
         if (m != null) selectedMarkers[id] = m
     }
