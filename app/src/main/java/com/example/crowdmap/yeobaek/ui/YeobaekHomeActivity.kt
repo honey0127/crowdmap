@@ -100,6 +100,7 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var infoDisperse: MaterialButton
     private lateinit var recoHeader: TextView
     private lateinit var ecoChip: TextView
+    private lateinit var placeInfoBehavior: BottomSheetBehavior<View>
     private val reportMarkers = ArrayList<Marker>()
 
     private val searchLauncher = registerForActivityResult(
@@ -110,7 +111,15 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
             val title = result.data?.getStringExtra(Extras.PLACE_TITLE) ?: return@registerForActivityResult
             val lat = result.data?.getDoubleExtra(Extras.PLACE_LAT, Double.NaN) ?: Double.NaN
             val lng = result.data?.getDoubleExtra(Extras.PLACE_LNG, Double.NaN) ?: Double.NaN
-            if (id > 0) addStop(id, Stop(title, lat, lng))
+            if (id <= 0) return@registerForActivityResult
+            // 검색 결과는 바로 담지 않고, 그 위치로 이동해 장소 시트를 띄운다(네이버지도식).
+            // 사용자가 시트의 '＋ 플래너에 추가'를 눌러야 코스에 들어간다.
+            if (!lat.isNaN() && !lng.isNaN()) {
+                map?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), 16f))
+            }
+            showPlaceInfo(PlaceResult(
+                contentId = id, title = title,
+                lat = lat.takeIf { !it.isNaN() }, lng = lng.takeIf { !it.isNaN() }))
         }
     }
 
@@ -158,7 +167,7 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         }
         findViewById<View>(R.id.reco_close).setOnClickListener { recoPanel.visibility = View.GONE }
 
-        // 장소 탭 정보 카드
+        // 장소 정보 시트(네이버지도식) — 탭/검색했을 때만 아래에서 올라온다.
         placeInfo = findViewById(R.id.place_info)
         infoTitle = findViewById(R.id.info_title)
         infoMeta = findViewById(R.id.info_meta)
@@ -166,6 +175,8 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         infoOffpeak = findViewById(R.id.info_offpeak)
         infoDisperse = findViewById(R.id.info_disperse)
         recoHeader = findViewById(R.id.reco_header)
+        placeInfoBehavior = BottomSheetBehavior.from(placeInfo)
+        placeInfoBehavior.state = BottomSheetBehavior.STATE_HIDDEN   // 기본은 숨김
         findViewById<View>(R.id.info_close).setOnClickListener { hidePlaceInfo() }
 
         // 에코 트래블러 배지 + 실시간 제보
@@ -237,7 +248,7 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
                 val fresh = res.results.filter { !selectedStops.containsKey(it.contentId) }
                 recoHeader.text = "이 지역 추천 · 플래너에 넣을까요?"
                 recoAdapter.submit(fresh)
-                if (placeInfo.visibility != View.VISIBLE)
+                if (!isPlaceInfoShown())
                     recoPanel.visibility = if (fresh.isEmpty()) View.GONE else View.VISIBLE
                 renderNearbyMarkers(fresh)
                 loadReports()
@@ -324,12 +335,14 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         infoMeta.text = if (place.contentId <= 0)
             "지도에서 선택한 위치 · 담아서 코스에 추가"
         else {
-            val congestion = place.level?.let { "${Congestion.label(it)}" }
+            val congestion = place.level?.let { Congestion.label(it) }
             val quiet = place.quietScore?.let { "한적함 $it" }
-            listOfNotNull(place.catLabel, congestion, quiet, dist).joinToString(" · ")
+            listOfNotNull(place.catLabel, congestion, quiet, dist)
+                .joinToString(" · ")
+                .ifBlank { "플래너에 추가해 코스를 만들어 보세요" }
         }
         val already = selectedStops.containsKey(place.contentId)
-        infoAdd.text = if (already) "담김" else "＋ 담기"
+        infoAdd.text = if (already) "플래너에 담김" else "＋ 플래너에 추가"
         infoAdd.isEnabled = !already
         infoAdd.setOnClickListener { addFromReco(place); hidePlaceInfo() }
         // 오프피크/미시분산은 DB 명소(content_id>0)에서만
@@ -338,8 +351,10 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         infoDisperse.visibility = if (isDb) View.VISIBLE else View.GONE
         infoOffpeak.setOnClickListener { showOffpeak(place) }
         infoDisperse.setOnClickListener { showDisperse(place) }
+        // 지역 추천 패널과 코스 시트는 접어 두고, 장소 시트만 올린다(네이버지도식).
         recoPanel.visibility = View.GONE
-        placeInfo.visibility = View.VISIBLE
+        sheetBehavior.state = BottomSheetBehavior.STATE_COLLAPSED
+        placeInfoBehavior.state = BottomSheetBehavior.STATE_EXPANDED
     }
 
     /** 오프피크(덜 붐비는 시간) — 향후 12h 중 저혼잡 시간대 top3 다이얼로그. */
@@ -461,8 +476,11 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun hidePlaceInfo() {
-        placeInfo.visibility = View.GONE
+        placeInfoBehavior.state = BottomSheetBehavior.STATE_HIDDEN
     }
+
+    private fun isPlaceInfoShown() =
+        placeInfoBehavior.state != BottomSheetBehavior.STATE_HIDDEN
 
     /** 보이는 지도 범위(중심→모서리)로 추천 반경(km)을 정한다. */
     private fun radiusKmFromMap(gmap: GoogleMap): Double {

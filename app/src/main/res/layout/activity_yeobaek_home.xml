@@ -114,110 +114,6 @@
             app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
     </LinearLayout>
 
-    <!-- 장소 탭 정보 카드: 지도의 핀/명소를 탭하면 이 카드가 뜬다(네이버지도식). -->
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/place_info"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top"
-        android:layout_marginTop="82dp"
-        android:layout_marginHorizontal="16dp"
-        android:visibility="gone"
-        app:cardCornerRadius="18dp"
-        app:cardElevation="8dp"
-        app:cardBackgroundColor="@color/ye_surface"
-        tools:visibility="visible">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/info_title"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:maxLines="1"
-                        android:ellipsize="end"
-                        android:text="장소명"
-                        android:textColor="@color/ye_on_surface"
-                        android:textSize="17sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:id="@+id/info_meta"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:maxLines="2"
-                        android:ellipsize="end"
-                        android:text="분류 · 주소"
-                        android:textColor="@color/ye_on_surface_variant"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/info_close"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp"
-                    android:padding="6dp"
-                    android:text="✕"
-                    android:textColor="@color/ye_on_surface_variant"
-                    android:textSize="15sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="horizontal">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/info_add"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="＋ 담기"
-                    android:textSize="13sp"
-                    android:minWidth="0dp"
-                    android:paddingHorizontal="16dp"
-                    app:cornerRadius="12dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/info_offpeak"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="덜 붐비는 시간"
-                    android:textSize="13sp"
-                    android:minWidth="0dp"
-                    android:paddingHorizontal="8dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/info_disperse"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="근처 한적한 곳"
-                    android:textSize="13sp"
-                    android:minWidth="0dp"
-                    android:paddingHorizontal="8dp" />
-            </LinearLayout>
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
 
     <!-- 에코 트래블러 배지 (좌상단 떠 있는 칩) -->
     <TextView
@@ -486,5 +382,125 @@
 
         </LinearLayout>
         </androidx.core.widget.NestedScrollView>
+    </LinearLayout>
+
+    <!-- 장소 정보 시트(네이버지도식): 핀/명소를 탭하거나 검색했을 때만 아래에서 올라온다.
+         기본은 숨김(hideable + STATE_HIDDEN). 코스 시트 위에 겹쳐 뜬다. -->
+    <LinearLayout
+        android:id="@+id/place_info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/ye_sheet_bg"
+        android:elevation="16dp"
+        android:paddingBottom="20dp"
+        app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
+        app:behavior_hideable="true"
+        app:behavior_skipCollapsed="true"
+        app:behavior_draggable="true">
+
+        <View
+            android:layout_width="40dp"
+            android:layout_height="5dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/ye_handle" />
+
+        <!-- 이름 + 닫기 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="20dp">
+
+            <TextView
+                android:id="@+id/info_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:text="장소명"
+                android:textColor="@color/ye_on_surface"
+                android:textSize="21sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/info_close"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:padding="8dp"
+                android:text="✕"
+                android:textColor="@color/ye_on_surface_variant"
+                android:textSize="16sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/info_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:paddingHorizontal="20dp"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:text="분류 · 혼잡 · 거리"
+            android:textColor="@color/ye_on_surface_variant"
+            android:textSize="14sp" />
+
+        <!-- 액션 행: 플래너 추가(주요) + 보조 액션 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:paddingHorizontal="20dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/info_add"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="50dp"
+                android:text="＋ 플래너에 추가"
+                android:textSize="15sp"
+                android:minWidth="0dp"
+                app:cornerRadius="16dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/info_offpeak"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="50dp"
+                android:layout_marginStart="8dp"
+                android:text="⏰"
+                android:textSize="17sp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="16dp"
+                app:cornerRadius="16dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/info_disperse"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="50dp"
+                android:layout_marginStart="8dp"
+                android:text="🚶"
+                android:textSize="17sp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="16dp"
+                app:cornerRadius="16dp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:paddingHorizontal="20dp"
+            android:text="⏰ 덜 붐비는 시간 · 🚶 근처 더 한적한 곳"
+            android:textColor="@color/ye_on_surface_variant"
+            android:textSize="12sp" />
     </LinearLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
