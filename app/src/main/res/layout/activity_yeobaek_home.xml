@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 홈(재설계): 네이버지도식 풀스크린 지도 + 떠 있는 검색바 + 하단 시트(테이블링). -->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 홈: 네이버지도식 풀스크린 지도 + 떠 있는 검색바 + 접었다 펼 수 있는 하단 시트. -->
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -247,34 +248,103 @@
         android:textSize="13sp"
         app:cornerRadius="20dp" />
 
-    <!-- 하단 시트: 날짜·시간 + 선택 장소 + 모드 + CTA -->
+    <!-- 하단 시트(드래그로 접고 펼침): 손잡이 + 요약/CTA(접힘) + 상세(펼침) -->
     <LinearLayout
         android:id="@+id/bottom_sheet"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
         android:orientation="vertical"
         android:background="@drawable/ye_sheet_bg"
         android:elevation="12dp"
-        android:paddingHorizontal="20dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="22dp">
+        app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
+        app:behavior_peekHeight="128dp"
+        app:behavior_hideable="false"
+        app:behavior_draggable="true">
 
-        <View
-            android:layout_width="40dp"
-            android:layout_height="5dp"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginBottom="14dp"
-            android:background="@drawable/ye_handle" />
+        <!-- 손잡이: 탭해도 접힘/펼침 토글 -->
+        <FrameLayout
+            android:id="@+id/sheet_handle_area"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="10dp"
+            android:paddingBottom="8dp">
 
-        <!-- 지역구로 코스 짜기(플래너 페이지) -->
+            <View
+                android:layout_width="40dp"
+                android:layout_height="5dp"
+                android:layout_gravity="center_horizontal"
+                android:background="@drawable/ye_handle" />
+        </FrameLayout>
+
+        <!-- 접힌 상태에서 보이는 요약 + 코스 만들기 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="20dp"
+            android:paddingBottom="10dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/sheet_summary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="담은 장소 0곳"
+                    android:textColor="@color/ye_on_surface"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/sheet_summary_sub"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="위로 올리면 날짜·시간과 코스 방식을 정할 수 있어요"
+                    android:textColor="@color/ye_on_surface_variant"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_plan"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginStart="12dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="20dp"
+                android:text="코스 만들기"
+                android:textSize="15sp"
+                app:cornerRadius="16dp" />
+        </LinearLayout>
+
+        <!-- 펼쳤을 때 보이는 상세 설정(길면 스크롤) -->
+        <androidx.core.widget.NestedScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="20dp"
+            android:paddingBottom="22dp"
+            android:clipToPadding="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+        <!-- 위치 기준 코스 플래너 -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_district"
             style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="14dp"
-            android:text="🗺  성수·홍대·강남… 지역별 코스 플래너"
+            android:text="📍  이 위치 기준으로 코스 짜기"
             android:textSize="15sp"
             app:cornerRadius="16dp" />
 
@@ -405,15 +475,6 @@
             android:textColor="@color/ye_on_surface_variant"
             android:textSize="12sp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_plan"
-            android:layout_width="match_parent"
-            android:layout_height="54dp"
-            android:layout_marginTop="14dp"
-            android:text="코스 만들기"
-            android:textSize="16sp"
-            app:cornerRadius="16dp" />
-
         <ProgressBar
             android:id="@+id/home_progress"
             android:layout_width="wrap_content"
@@ -422,5 +483,8 @@
             android:layout_marginTop="12dp"
             android:visibility="gone"
             tools:visibility="visible" />
+
+        </LinearLayout>
+        </androidx.core.widget.NestedScrollView>
     </LinearLayout>
-</FrameLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

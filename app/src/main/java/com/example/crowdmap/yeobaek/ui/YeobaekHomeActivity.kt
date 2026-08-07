@@ -31,6 +31,7 @@ import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PointOfInterest
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.chip.Chip
@@ -81,6 +82,9 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var progress: ProgressBar
     private lateinit var planButton: MaterialButton
     private lateinit var modeHint: TextView
+    private lateinit var sheetSummary: TextView
+    private lateinit var sheetSummarySub: TextView
+    private lateinit var sheetBehavior: BottomSheetBehavior<View>
 
     private lateinit var recoPanel: View
     private lateinit var recoAdapter: RecoAdapter
@@ -121,6 +125,19 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         progress = findViewById(R.id.home_progress)
         planButton = findViewById(R.id.btn_plan)
         modeHint = findViewById(R.id.mode_hint)
+        sheetSummary = findViewById(R.id.sheet_summary)
+        sheetSummarySub = findViewById(R.id.sheet_summary_sub)
+
+        // 하단 시트: 드래그로 접고 펼침. 손잡이를 탭해도 토글된다.
+        sheetBehavior = BottomSheetBehavior.from(findViewById<View>(R.id.bottom_sheet))
+        sheetBehavior.state = BottomSheetBehavior.STATE_COLLAPSED
+        findViewById<View>(R.id.sheet_handle_area).setOnClickListener {
+            sheetBehavior.state =
+                if (sheetBehavior.state == BottomSheetBehavior.STATE_EXPANDED)
+                    BottomSheetBehavior.STATE_COLLAPSED
+                else
+                    BottomSheetBehavior.STATE_EXPANDED
+        }
 
         dateField.setOnClickListener { pickDate() }
         timeField.setOnClickListener { pickTime() }
@@ -128,9 +145,8 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         findViewById<View>(R.id.search_bar).setOnClickListener(openSearch)
         findViewById<MaterialButton>(R.id.btn_add_place).setOnClickListener(openSearch)
         planButton.setOnClickListener { requestSchedule() }
-        findViewById<MaterialButton>(R.id.btn_district).setOnClickListener {
-            startActivity(Intent(this, DistrictActivity::class.java))
-        }
+        // 지금 보고 있는 지도 중심을 기준으로 코스 플래너를 연다.
+        findViewById<MaterialButton>(R.id.btn_district).setOnClickListener { openAreaPlanner() }
 
         // 지역 추천 패널
         recoPanel = findViewById(R.id.reco_panel)
@@ -182,6 +198,9 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
             googleMap.setMapStyle(MapStyleOptions.loadRawResourceStyle(this, R.raw.ye_map_style))
         }
         googleMap.uiSettings.isMapToolbarEnabled = false
+        // 접힌 하단 시트에 구글 로고·컨트롤이 가리지 않도록 여백을 준다(시트 peek 높이 기준).
+        val bottomPad = (128 * resources.displayMetrics.density).toInt()
+        googleMap.setPadding(0, 0, 0, bottomPad)
         // 기본 시점: 서울 중심
         googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(37.5665, 126.9780), 13f))
         // 지도를 옮길 때마다 그 지역 명소를 추천
@@ -522,6 +541,29 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
             }
             chipGroup.addView(chip)
         }
+        updateSheetSummary()
+    }
+
+    /** 접힌 시트에 보이는 요약 줄. */
+    private fun updateSheetSummary() {
+        sheetSummary.text = "담은 장소 ${selectedStops.size}곳"
+        sheetSummarySub.text = when {
+            selectedStops.isEmpty() ->
+                "지도에서 장소를 담거나, 위로 올려 설정을 바꿔보세요"
+            else -> selectedStops.values.joinToString(" · ") { it.title }
+        }
+    }
+
+    /** 지금 보고 있는 지도 중심을 기준으로 '이 위치 코스 플래너'를 연다. */
+    private fun openAreaPlanner() {
+        val c = map?.cameraPosition?.target
+        startActivity(Intent(this, DistrictActivity::class.java).apply {
+            if (c != null) {
+                putExtra(Extras.CENTER_LAT, c.latitude)
+                putExtra(Extras.CENTER_LNG, c.longitude)
+                putExtra(Extras.CENTER_NAME, "지도에서 고른 위치")
+            }
+        })
     }
 
     /** 담은 장소 마커(코럴). 이미 있으면 스킵. */
@@ -585,5 +627,7 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun setLoading(loading: Boolean) {
         progress.visibility = if (loading) View.VISIBLE else View.GONE
         planButton.isEnabled = !loading
+        // 시트가 접혀 있어도 상태가 보이도록 버튼 자체에 표시한다.
+        planButton.text = if (loading) "만드는 중…" else "코스 만들기"
     }
 }

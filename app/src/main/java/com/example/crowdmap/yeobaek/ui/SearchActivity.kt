@@ -58,10 +58,25 @@ class SearchActivity : AppCompatActivity() {
         try {
             val res = YeobaekClient.api.searchPlaces(q)
             adapter.submit(res.results)
-            hint.text = if (res.results.isEmpty()) "‘$q’에 대한 결과가 없어요" else ""
-            hint.visibility = if (res.results.isEmpty()) View.VISIBLE else View.GONE
+            if (res.results.isEmpty()) {
+                // 결과 0건은 "검색어가 없다"기보다 "장소 DB가 비어 있다"인 경우가 많다.
+                hint.text = "‘$q’에 대한 결과가 없어요.\n\n" +
+                    "장소가 하나도 안 나온다면 서버에 장소 데이터가 아직 없는 상태예요.\n" +
+                    "PC에서 collect_tourapi.py 를 실행해 명소를 받아오세요."
+                hint.visibility = View.VISIBLE
+            } else {
+                hint.visibility = View.GONE
+            }
         } catch (e: Exception) {
-            Toast.makeText(this, "검색 실패: ${e.message ?: "네트워크 오류"}", Toast.LENGTH_SHORT).show()
+            // 네트워크/서버 문제는 조용히 지나가지 않게 화면에도 남긴다.
+            adapter.submit(emptyList())
+            hint.text = "서버에 연결하지 못했어요.\n\n" +
+                "· 여백 서버(uvicorn)가 실행 중인지\n" +
+                "· local.properties 의 SERVER_IP 가 PC 주소인지\n" +
+                "· 폰과 PC 가 같은 Wi-Fi 인지 확인해 주세요.\n\n" +
+                "(${e.message ?: "네트워크 오류"})"
+            hint.visibility = View.VISIBLE
+            Toast.makeText(this, "검색 실패: 서버 연결 확인", Toast.LENGTH_SHORT).show()
         } finally {
             setLoading(false)
         }

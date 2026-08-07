@@ -13,4 +13,8 @@ object Extras {
     const val PLACE_TITLE = "place_title" // String — SearchActivity 결과
     const val PLACE_LAT = "place_lat"    // Double — SearchActivity 결과(지도 마커)
     const val PLACE_LNG = "place_lng"    // Double — SearchActivity 결과(지도 마커)
+    // 위치 기준 코스 플래너(DistrictActivity)에 넘길 시작 좌표·이름
+    const val CENTER_LAT = "center_lat"  // Double
+    const val CENTER_LNG = "center_lng"  // Double
+    const val CENTER_NAME = "center_name" // String
 }

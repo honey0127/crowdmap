@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 코스 플래너: 지역구 선택 → 명소 라인업 담기 → 코스 만들기 -->
+<!-- 위치 기준 코스 플래너: 기준 위치 선택 → 주변 명소 라인업 담기 → 코스 만들기 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -25,31 +25,104 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="지역을 고르면 명소 라인업을 담아 하루 코스를 만들어요"
+            android:text="기준 위치를 고르면 그 주변 명소로 하루 코스를 만들어요"
             android:textColor="@color/ye_on_surface_variant"
             android:textSize="13sp" />
     </LinearLayout>
 
-    <!-- 지역구 칩 (가로 스크롤) -->
+    <!-- 기준 위치 선택 바 (탭하면 장소 검색으로 위치 변경) -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/center_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:layout_marginHorizontal="20dp"
+        android:clickable="true"
+        android:focusable="true"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="2dp"
+        app:strokeWidth="1dp"
+        app:strokeColor="@color/ye_outline"
+        app:cardBackgroundColor="@color/ye_surface">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="14dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="10dp"
+                android:text="📍"
+                android:textSize="16sp" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="기준 위치"
+                    android:textColor="@color/ye_on_surface_variant"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/center_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="위치를 선택하세요"
+                    android:textColor="@color/ye_on_surface"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="변경"
+                android:textColor="@color/ye_primary"
+                android:textStyle="bold"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- 빠른 선택: 대표 지역 프리셋 (가로 스크롤) -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:paddingHorizontal="20dp"
+        android:text="빠른 선택"
+        style="@style/Ye.Section" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/district_list"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:clipToPadding="false"
         android:paddingHorizontal="20dp"
-        android:paddingVertical="6dp"
+        android:paddingVertical="4dp"
         android:orientation="horizontal"
         app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
-    <!-- 선택 지역구 소개 -->
+    <!-- 선택 위치 소개 / 반경 안내 -->
     <TextView
         android:id="@+id/district_desc"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingHorizontal="20dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="8dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="6dp"
         android:text=""
         android:textColor="@color/ye_on_surface_variant"
         android:textSize="13sp" />
@@ -76,13 +149,15 @@
 
         <TextView
             android:id="@+id/lineup_empty"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:gravity="center"
-            android:text="이 지역엔 등록된 명소가 아직 적어요.\n지도 화면에서 위치를 직접 담아보세요."
+            android:paddingHorizontal="32dp"
+            android:text="주변에 등록된 명소가 없어요"
             android:textColor="@color/ye_on_surface_variant"
             android:textSize="14sp"
+            android:lineSpacingExtra="4dp"
             android:visibility="gone" />
     </FrameLayout>
 
