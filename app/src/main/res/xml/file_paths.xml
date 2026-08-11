@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 공유용 이미지(일정 카드 캡처)를 담는 캐시 하위 폴더만 외부에 노출한다. -->
+<paths>
+    <cache-path name="shared_cards" path="shared_cards/" />
+</paths>

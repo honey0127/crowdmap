@@ -7,10 +7,43 @@ from pydantic import BaseModel, Field
 from ..config import settings
 from ..db import repository
 from ..engine import engine_state
-from ..util import kst_iso_to_unix, unix_to_kst_hhmm, dwell_for_category
+from ..util import kst_iso_to_unix, unix_to_kst_hhmm, dwell_for_category, haversine_km
 from ..services.match_service import find_twins
 
 router = APIRouter(prefix="/api/v1", tags=["schedule"])
+
+# 여백 지수(0~100) 합산 가중치 — 혼잡·유사도·이동효율을 한 숫자로(스토어 스크린샷·브랜드 언어용).
+# 첫 튜닝값(부록 C 스타일 근사): 혼잡 회피가 가장 크게, 이동 효율은 가장 작게.
+YEOBAEK_INDEX_W_CONGESTION = 0.45
+YEOBAEK_INDEX_W_SIMILARITY = 0.30
+YEOBAEK_INDEX_W_TRAVEL = 0.25
+_TRAVEL_SCORE_CEIL_KM = 12.0  # 평균 구간 이동거리가 이 값 이상이면 이동효율 점수 0
+
+
+def _yeobaek_index(ordered: list) -> int:
+    """혼잡도(최종 동선의 한적함)·유사도(치환 시 감성 보존)·이동효율(구간 거리)를
+    하나의 0~100 점수로 합산. ordered 는 engine_state.optimize() 의 plan.ordered(PlanStop 리스트)."""
+    if not ordered:
+        return 0
+
+    congestion_score = sum((4 - s.forecast_level) / 3 * 100 for s in ordered) / len(ordered)
+    similarity_score = sum(s.similarity for s in ordered) / len(ordered) * 100
+
+    if len(ordered) > 1:
+        legs_km = [
+            haversine_km(a.lat, a.lng, b.lat, b.lng)
+            for a, b in zip(ordered, ordered[1:])
+            if a.lat and a.lng and b.lat and b.lng
+        ]
+        avg_leg_km = sum(legs_km) / len(legs_km) if legs_km else 0.0
+    else:
+        avg_leg_km = 0.0
+    travel_score = max(0.0, 100.0 * (1 - min(1.0, avg_leg_km / _TRAVEL_SCORE_CEIL_KM)))
+
+    score = (YEOBAEK_INDEX_W_CONGESTION * congestion_score
+             + YEOBAEK_INDEX_W_SIMILARITY * similarity_score
+             + YEOBAEK_INDEX_W_TRAVEL * travel_score)
+    return round(max(0.0, min(100.0, score)))
 
 
 class Weights(BaseModel):
@@ -88,4 +121,5 @@ def schedule(req: ScheduleRequest) -> dict:
         "ordered": ordered,
         "total_cost": round(plan.total_cost, 4),
         "saved_congestion_pct": plan.saved_congestion_pct,
+        "yeobaek_index": _yeobaek_index(plan.ordered),
     }

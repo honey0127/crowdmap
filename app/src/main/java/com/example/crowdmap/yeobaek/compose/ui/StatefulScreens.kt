@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.crowdmap.yeobaek.compose.DashboardScreen
 import com.example.crowdmap.yeobaek.compose.MapHeatmapScreen
@@ -37,13 +38,17 @@ fun DashboardRoute(contentId: Long, allowSample: Boolean = true) {
 fun ScheduleRoute(startTime: String, stops: List<Long>, allowSample: Boolean = true) {
     val vm: ScheduleViewModel = viewModel()
     val state by vm.state.collectAsState()
-    LaunchedEffect(startTime, stops) { vm.load(startTime, stops) }
+    val context = LocalContext.current
+    LaunchedEffect(startTime, stops) { vm.load(context, startTime, stops) }
     StateHost(
         state = state,
-        onRetry = { vm.load(startTime, stops) },
-        onUseSample = if (allowSample) ({ vm.useSample(SampleData.schedule) }) else null,
+        onRetry = { vm.load(context, startTime, stops) },
+        onUseSample = if (allowSample) ({ vm.useSample(ScheduleData(SampleData.schedule)) }) else null,
     ) { data ->
-        ScheduleScreen(schedule = data, dwellMin = SampleData.dwellMin, transit = SampleData.transit)
+        ScheduleScreen(
+            schedule = data.response, dwellMin = SampleData.dwellMin, transit = SampleData.transit,
+            isOffline = data.isOffline,
+        )
     }
 }
 

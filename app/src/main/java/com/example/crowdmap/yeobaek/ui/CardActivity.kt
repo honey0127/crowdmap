@@ -1,6 +1,7 @@
 package com.example.crowdmap.yeobaek.ui
 
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -8,12 +9,16 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
+import androidx.core.view.drawToBitmap
 import androidx.lifecycle.lifecycleScope
 import com.example.crowdmap.R
 import com.example.crowdmap.yeobaek.data.CardRequest
 import com.example.crowdmap.yeobaek.data.ScheduleRequest
 import com.example.crowdmap.yeobaek.data.YeobaekClient
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 
 /**
  * 대안카드(절차서 4-3): /card 근거 문구 + 혼잡도 비교 + 원탭 스왑(모듈4).
@@ -27,6 +32,8 @@ class CardActivity : AppCompatActivity() {
     private lateinit var facts: TextView
     private lateinit var genBy: TextView
     private lateinit var swapBtn: Button
+    private lateinit var cardContainer: View
+    private lateinit var shareBtn: Button
 
     private var sourceId: Long = 0
     private var altId: Long = 0
@@ -49,9 +56,31 @@ class CardActivity : AppCompatActivity() {
         genBy = findViewById(R.id.card_genby)
         swapBtn = findViewById(R.id.card_swap)
         swapBtn.isEnabled = false
+        cardContainer = findViewById(R.id.card_container)
+        shareBtn = findViewById(R.id.card_share)
 
         loadCard()
         swapBtn.setOnClickListener { swapAndReschedule() }
+        shareBtn.setOnClickListener { shareCardImage() }
+    }
+
+    /** 카드 뷰를 이미지로 캡처해 공유 시트로 내보낸다. */
+    private fun shareCardImage() {
+        try {
+            val bitmap = cardContainer.drawToBitmap()
+            val dir = File(cacheDir, "shared_cards").apply { mkdirs() }
+            val file = File(dir, "yeobaek_card_${System.currentTimeMillis()}.png")
+            FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out) }
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "image/png"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(send, "여백 카드 공유"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "이미지 공유 실패: ${e.message ?: "알 수 없는 오류"}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun loadCard() {

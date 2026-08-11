@@ -72,7 +72,7 @@ class SearchActivity : AppCompatActivity() {
             adapter.submit(emptyList())
             hint.text = "서버에 연결하지 못했어요.\n\n" +
                 "· 여백 서버(uvicorn)가 실행 중인지\n" +
-                "· local.properties 의 SERVER_IP 가 PC 주소인지\n" +
+                "· local.properties 의 DEV_BASE_URL 이 PC 주소인지\n" +
                 "· 폰과 PC 가 같은 Wi-Fi 인지 확인해 주세요.\n\n" +
                 "(${e.message ?: "네트워크 오류"})"
             hint.visibility = View.VISIBLE

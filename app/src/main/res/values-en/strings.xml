@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">Yeobaek</string>
+
+    <!-- Onboarding -->
+    <string name="onboard_skip">Skip</string>
+    <string name="onboard_next">Next</string>
+    <string name="onboard_start">Start Yeobaek</string>
+
+    <string name="onboard1_eyebrow">Yeobaek · 旅白</string>
+    <string name="onboard1_title">Travel with\nroom to breathe</string>
+    <string name="onboard1_body">Like the blank space in a painting, travel needs room to breathe too. Skip the crowds and design a day with a little pause in it.</string>
+
+    <string name="onboard2_eyebrow">Live Crowd Forecast</string>
+    <string name="onboard2_title">Know before\nit gets busy</string>
+    <string name="onboard2_body">We read hourly crowd levels from 121 forecast points across Seoul, so you always know where\'s quiet right now.</string>
+
+    <string name="onboard3_eyebrow">Emotional Twins</string>
+    <string name="onboard3_title">Same vibe,\nless crowded</string>
+    <string name="onboard3_body">Swap a packed spot for a quieter one with the same feel. Our C++ engine replans your day on the fly.</string>
+</resources>

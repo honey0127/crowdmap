@@ -1,9 +1,9 @@
-    import java.util.Properties
+import java.util.Properties
 
 plugins {
-    id("com.android.application") // 버전 정보를 빼고 ID만 적습니다.
+    id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    alias(libs.plugins.compose.compiler) // 여백 Compose 레이어 (Kotlin 2.0 Compose Compiler)
+    alias(libs.plugins.compose.compiler)
 }
 
 val localProperties = Properties().apply {
@@ -11,39 +11,80 @@ val localProperties = Properties().apply {
     if (f.exists()) load(f.inputStream())
 }
 
+// 릴리스 서명 정보. keystore.properties 는 반드시 .gitignore 에 넣을 것.
+val keystoreProperties = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) load(f.inputStream())
+}
+val hasReleaseKeystore = keystoreProperties.getProperty("storeFile") != null
+
 android {
+    // namespace = R 클래스/소스 package 선언 기준. 지금 바꾸면 전 소스의 package 선언을
+    // 다 고쳐야 하므로 그대로 둔다. 스토어에 노출되는 건 namespace 가 아니라 applicationId.
     namespace = "com.example.crowdmap"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.crowdmap"
+        // 한 번 업로드하면 영원히 못 바꾼다. com.example.* 은 Google Play 가 업로드 자체를 거부한다.
+        applicationId = "io.github.honey0127.yeobaek"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = "0.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // 지도 키: local.properties 의 MAPS_API_KEY 우선, 없으면 기존 기본 키로 폴백(회귀 방지).
+
+        // 지도 키: local.properties 의 MAPS_API_KEY 사용.
+        // 기존 하드코딩 폴백 키는 공개 저장소에 노출되었으므로 제거했다. (재발급 필요)
         manifestPlaceholders["MAPS_API_KEY"] =
-            localProperties.getProperty("MAPS_API_KEY", "AIzaSyCzG9WISxXy7e8EZ-YCf5XtVbpSfX4V9SA")
-        buildConfigField("String", "SERVER_IP",
-            "\"${localProperties.getProperty("SERVER_IP", "127.0.0.1")}\"")
+            localProperties.getProperty("MAPS_API_KEY", "")
+    }
+
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildFeatures {
         buildConfig = true
-        compose = true // 여백 Compose 레이어
+        compose = true
     }
 
     buildTypes {
+        debug {
+            // 에뮬레이터에서 호스트 PC 의 FastAPI 는 10.0.2.2 로 잡힌다.
+            // 실기기 테스트는 local.properties 에 DEV_BASE_URL=http://192.168.x.x:8000/ 지정.
+            buildConfigField(
+                "String", "BASE_URL",
+                "\"${localProperties.getProperty("DEV_BASE_URL", "http://10.0.2.2:8000/")}\""
+            )
+        }
         release {
+            // 릴리스는 반드시 https. network_security_config 가 http 를 차단한다.
+            buildConfigField(
+                "String", "BASE_URL",
+                "\"${localProperties.getProperty("PROD_BASE_URL", "https://api.yeobaek.kr/")}\""
+            )
+
+            // R8 는 Retrofit/Gson 리플렉션과 충돌 여지가 있어 첫 출시에서는 끈다.
+            // 출시 후 여유가 생기면 켜고 proguard-rules.pro 를 채울 것.
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

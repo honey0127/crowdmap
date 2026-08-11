@@ -8,10 +8,8 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 // 여백 서버(FastAPI/uvicorn) Retrofit 싱글턴.
-// 서버 IP 는 local.properties → BuildConfig.SERVER_IP (기존 앱과 공유), 포트는 uvicorn 기본 8000.
+// 서버 주소는 local.properties → BuildConfig.BASE_URL (빌드 타입별 DEV_BASE_URL/PROD_BASE_URL).
 object YeobaekClient {
-
-    const val PORT = 8000
 
     val gson: Gson = Gson()
 
@@ -22,7 +20,7 @@ object YeobaekClient {
             .build()
 
         Retrofit.Builder()
-            .baseUrl("http://${BuildConfig.SERVER_IP}:$PORT/")
+            .baseUrl(BuildConfig.BASE_URL)
             .client(ok)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()

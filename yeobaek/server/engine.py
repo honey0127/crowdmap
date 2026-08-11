@@ -10,11 +10,25 @@
 from __future__ import annotations
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from .config import settings
 from .db import repository
+from .services import history
+
+
+@dataclass
+class HistoricalForecast:
+    """D+1 폴백용 스탠드인 — pybind ForecastResult 와 같은 필드 모양(level/ppltn_min/max/valid).
+    실측이 아니라 과거 같은 시간대 관측 평균이므로 fcst_unix=0(실측 아님을 표시)."""
+    level: int
+    fcst_unix: int = 0
+    ppltn_min: int = 0
+    ppltn_max: int = 0
+    valid: bool = True
+    is_historical: bool = True
 
 # .so 탐색 경로: server/ (빌드 복사본) 과 engine/build/
 _HERE = Path(__file__).resolve().parent
@@ -78,7 +92,18 @@ class EngineState:
         return list(self.spatial.query_radius(lat, lng, radius_km))
 
     def forecast(self, area_name: str, arrival_unix: int):
-        return self.provider.get(area_name, int(arrival_unix))
+        """도착시점 예보. 서울 API 의 예보창(~12h)을 벗어나 엔진이 아무것도 못 찾으면
+        (D+1 등) 같은 지점·같은 시간대의 과거 관측 평균으로 대체한다(모듈2 보강).
+        실측이 나오면 그 값을 forecast_cache 에 적재해 다음 D+1 폴백의 표본을 늘린다."""
+        fc = self.provider.get(area_name, int(arrival_unix))
+        if fc.valid and fc.fcst_unix > 0:
+            history.record(area_name, fc.level, fc.ppltn_min, fc.ppltn_max, fc.fcst_unix)
+            return fc
+        if not fc.valid:
+            hist_level = history.historical_level(area_name, int(arrival_unix))
+            if hist_level is not None:
+                return HistoricalForecast(level=hist_level)
+        return fc
 
     def resolve_now(self, lat: float, lng: float):
         """(lat,lng) 실시간 현재 혼잡 -> (level, ratio, valid) 또는 None. 모듈4 급증 감지용."""

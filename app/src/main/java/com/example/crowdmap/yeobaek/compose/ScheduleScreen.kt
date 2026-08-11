@@ -47,6 +47,7 @@ fun ScheduleScreen(
     dwellMin: List<Int>,
     transit: List<String>,
     modifier: Modifier = Modifier,
+    isOffline: Boolean = false,
 ) {
     Column(
         modifier
@@ -55,11 +56,14 @@ fun ScheduleScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp),
     ) {
+        if (isOffline) OfflineBanner()
+
         Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 14.dp), verticalAlignment = Alignment.Top) {
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text("10월 11일 · 최적화 완료", color = YeobaekTheme.colors.inkFaint, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 Text("오늘의 여백", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 3.dp))
             }
+            schedule.yeobaekIndex?.let { YeobaekIndexBadge(it) }
         }
 
         DensityBuffer(savedPct = schedule.savedCongestionPct, stopsChanged = schedule.ordered.count { it.substitutedFrom != null })
@@ -79,6 +83,37 @@ fun ScheduleScreen(
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/** 서버 연결 실패 시 로컬에 저장된 마지막 계획을 보여주고 있음을 알리는 배너. */
+@Composable
+private fun OfflineBanner() {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp).clip(MaterialTheme.shapes.medium)
+            .background(YeobaekTheme.colors.density(3).bg)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "오프라인 · 서버에 연결하지 못해 마지막으로 저장된 계획을 보여드려요",
+            color = YeobaekTheme.colors.density(3).ink, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+/** 여백 지수 배지 — 혼잡·유사도·이동효율을 합산한 이 계획의 단일 점수(0~100). 브랜드 지표. */
+@Composable
+private fun YeobaekIndexBadge(index: Int) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.size(56.dp).clip(CircleShape)
+                .background(Brush.linearGradient(listOf(YeobaekTheme.colors.brand, YeobaekTheme.colors.brandDeep))),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("$index", color = Color(0xFFF3FAF9), fontSize = 20.sp, fontWeight = FontWeight.W800)
+        }
+        Text("여백지수", color = YeobaekTheme.colors.inkFaint, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
     }
 }
 

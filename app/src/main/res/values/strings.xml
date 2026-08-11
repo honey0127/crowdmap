@@ -1,3 +1,20 @@
 <resources>
     <string name="app_name">여백</string>
+
+    <!-- 온보딩 (화면 5) -->
+    <string name="onboard_skip">건너뛰기</string>
+    <string name="onboard_next">다음</string>
+    <string name="onboard_start">여백 시작하기</string>
+
+    <string name="onboard1_eyebrow">여백 · 旅白</string>
+    <string name="onboard1_title">여백을 두고\n여행하세요</string>
+    <string name="onboard1_body">그림의 여백처럼, 여행에도 비움의 여유가 필요합니다. 붐빔을 피해 쉼표가 있는 하루를 설계해요.</string>
+
+    <string name="onboard2_eyebrow">실시간 혼잡 예보</string>
+    <string name="onboard2_title">붐비기 전에\n먼저 알아요</string>
+    <string name="onboard2_body">서울 121개 예보지점의 시간대별 혼잡을 읽어, 지금 이 순간 한적한 곳을 알려드립니다.</string>
+
+    <string name="onboard3_eyebrow">감성 쌍둥이</string>
+    <string name="onboard3_title">같은 감성,\n다른 한적함</string>
+    <string name="onboard3_body">붐비는 명소 대신 값어치가 같은 조용한 대안으로. C++ 엔진이 하루 동선을 다시 짭니다.</string>
 </resources>

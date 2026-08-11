@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from ..db import repository
 from ..engine import engine_state
-from ..services.rag import cat_label
+from ..services.rag import cat_label, LEVEL_LABELS
 
 
 def quiet_score(level) -> int | None:
@@ -146,7 +146,8 @@ def resolve_now(lat: float = Query(...), lng: float = Query(...)) -> dict:
 @router.get("/places/offpeak/{content_id}")
 def offpeak(content_id: int) -> dict:
     """오프피크 시간 추천 — 향후 12시간 중 혼잡이 낮은 시간대(도착시점 예보 기준).
-    서울 예보권 밖이면 timeline 빈 배열."""
+    각 시간대에 원본 예보 값(예측 인구 범위·서울시 원문 레벨 라벨)을 함께 실어
+    앱의 '왜 이 시간?' 근거 표시에 쓴다("데이터 활용" 신뢰도). 서울 예보권 밖이면 timeline 빈 배열."""
     area = repository.get_area_name(content_id)
     timeline = []
     if area and engine_state.available:
@@ -154,15 +155,28 @@ def offpeak(content_id: int) -> dict:
         base = now - (now % 3600) + 3600     # 다음 정시부터
         for h in range(12):
             t = base + h * 3600
+            fc = None
             try:
                 fc = engine_state.forecast(area, t)
-                lvl = int(fc.level) if fc else None
             except Exception:
-                lvl = None
+                fc = None
+            lvl = int(fc.level) if fc else None
             if lvl:
-                timeline.append({"unix": t, "level": lvl, "quiet_score": quiet_score(lvl)})
+                timeline.append({
+                    "unix": t,
+                    "level": lvl,
+                    "quiet_score": quiet_score(lvl),
+                    "level_label": LEVEL_LABELS.get(lvl),
+                    "ppltn_min": int(fc.ppltn_min) if fc.ppltn_min else None,
+                    "ppltn_max": int(fc.ppltn_max) if fc.ppltn_max else None,
+                    # 서울 API 예보창(~12h) 밖(D+1 등)이라 과거 같은 시간대 평균으로 추정한 값이면 True.
+                    "historical": bool(getattr(fc, "is_historical", False)),
+                })
     best = sorted(timeline, key=lambda x: (x["level"], x["unix"]))[:3]
-    return {"content_id": content_id, "area": area, "best": best, "timeline": timeline}
+    return {
+        "content_id": content_id, "area": area, "best": best, "timeline": timeline,
+        "source": "서울시 실시간 도시데이터(FCST_PPLTN)" if area else None,
+    }
 
 
 class AdhocPlace(BaseModel):

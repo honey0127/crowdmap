@@ -36,6 +36,8 @@ data class ScheduleResponse(
     val ordered: List<PlanStop>,
     @SerializedName("total_cost") val totalCost: Double,
     @SerializedName("saved_congestion_pct") val savedCongestionPct: Int,
+    // 여백 지수(0~100) — 혼잡·유사도·이동효율을 합산한 이 계획의 단일 점수(브랜드 지표).
+    @SerializedName("yeobaek_index") val yeobaekIndex: Int? = null,
 )
 
 // ── /api/v1/match ──
@@ -129,6 +131,12 @@ data class OffpeakHour(
     val unix: Long,
     val level: Int,
     @SerializedName("quiet_score") val quietScore: Int? = null,
+    // "왜 이 시간?" 근거 — 서울시 원본 예보 값(있을 때만; SEOUL_API_KEY 미설정/예보 부재 시 null).
+    @SerializedName("level_label") val levelLabel: String? = null,
+    @SerializedName("ppltn_min") val ppltnMin: Int? = null,
+    @SerializedName("ppltn_max") val ppltnMax: Int? = null,
+    // true면 서울 API 예보창(~12h) 밖(D+1 등)이라 과거 같은 시간대 평균으로 추정한 값.
+    val historical: Boolean = false,
 )
 
 data class OffpeakResponse(
@@ -136,6 +144,7 @@ data class OffpeakResponse(
     val area: String? = null,
     val best: List<OffpeakHour> = emptyList(),
     val timeline: List<OffpeakHour> = emptyList(),
+    val source: String? = null,   // 데이터 출처(원본 API 명) — 근거 화면에 표시
 )
 
 // ── /api/v1/resolve_now (실시간 혼잡, 리스케줄 알림) ──

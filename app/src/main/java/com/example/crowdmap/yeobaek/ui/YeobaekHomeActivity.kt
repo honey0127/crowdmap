@@ -18,6 +18,7 @@ import com.example.crowdmap.R
 import com.example.crowdmap.yeobaek.data.AdhocRequest
 import com.example.crowdmap.yeobaek.data.Congestion
 import com.example.crowdmap.yeobaek.data.EcoStore
+import com.example.crowdmap.yeobaek.data.StampStore
 import com.example.crowdmap.yeobaek.data.PlaceResult
 import com.example.crowdmap.yeobaek.data.ReportRequest
 import com.example.crowdmap.yeobaek.data.ScheduleRequest
@@ -102,6 +103,7 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var infoDisperse: MaterialButton
     private lateinit var recoHeader: TextView
     private lateinit var ecoChip: TextView
+    private lateinit var stampChip: TextView
     private lateinit var placeInfoBehavior: BottomSheetBehavior<View>
     private val reportMarkers = ArrayList<Marker>()
 
@@ -185,6 +187,11 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         ecoChip = findViewById(R.id.eco_chip)
         updateEcoChip()
         findViewById<MaterialButton>(R.id.btn_report).setOnClickListener { showReportDialog() }
+
+        // 여백 스탬프(모은 장소) — 누르면 모아보기
+        stampChip = findViewById(R.id.stamp_chip)
+        updateStampChip()
+        stampChip.setOnClickListener { showStampsDialog() }
 
         val modeGroup = findViewById<MaterialButtonToggleGroup>(R.id.mode_group)
         modeGroup.check(R.id.btn_mode_auto)
@@ -444,6 +451,25 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         ecoChip.text = "🌱 ${EcoStore.points(this)}"
     }
 
+    private fun updateStampChip() {
+        stampChip.text = "旅 ${StampStore.count(this)}"
+    }
+
+    /** 지금까지 모은 스탬프(장소) 모아보기. */
+    private fun showStampsDialog() {
+        val stamps = StampStore.all(this)
+        val body = if (stamps.isEmpty()) {
+            "아직 모은 스탬프가 없어요.\n지도에서 장소를 담으면 스탬프가 쌓여요."
+        } else {
+            stamps.joinToString("\n") { "旅 ${it.title}" }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("여백 스탬프 (${stamps.size})")
+            .setMessage(body)
+            .setPositiveButton("닫기", null)
+            .show()
+    }
+
     private fun awardEco(pts: Int) {
         val total = EcoStore.award(this, pts)
         updateEcoChip()
@@ -569,6 +595,10 @@ class YeobaekHomeActivity : AppCompatActivity(), OnMapReadyCallback {
         fitCameraToSelected()
         refreshChips()
         refreshReco()   // 담은 장소는 주변 추천/핀에서 제외
+        if (id > 0 && StampStore.stamp(this, id, stop.title)) {
+            updateStampChip()
+            Toast.makeText(this, "旅 ‘${stop.title}’ 스탬프를 모았어요", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun removeStop(id: Long) {

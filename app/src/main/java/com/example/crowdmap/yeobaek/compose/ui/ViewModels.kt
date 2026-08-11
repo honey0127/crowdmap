@@ -1,11 +1,13 @@
 package com.example.crowdmap.yeobaek.compose.ui
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.crowdmap.yeobaek.data.MatchRequest
 import com.example.crowdmap.yeobaek.data.MatchResponse
 import com.example.crowdmap.yeobaek.data.OffpeakResponse
 import com.example.crowdmap.yeobaek.data.PlaceResult
+import com.example.crowdmap.yeobaek.data.PlanCache
 import com.example.crowdmap.yeobaek.data.ScheduleRequest
 import com.example.crowdmap.yeobaek.data.ScheduleResponse
 import com.example.crowdmap.yeobaek.data.Twin
@@ -26,7 +28,7 @@ import kotlinx.coroutines.launch
 
 private fun errMessage(e: Throwable): String = when (e) {
     is java.net.UnknownHostException, is java.net.ConnectException ->
-        "서버에 연결할 수 없어요 (SERVER_IP 확인)."
+        "서버에 연결할 수 없어요 (DEV_BASE_URL 확인)."
     is java.net.SocketTimeoutException -> "응답이 지연됩니다. 잠시 후 다시 시도하세요."
     else -> e.message ?: "알 수 없는 오류"
 }
@@ -61,24 +63,33 @@ class DashboardViewModel(private val api: YeobaekApi = YeobaekClient.api) : View
 }
 
 // ── 스케줄 ────────────────────────────────────────────────
-class ScheduleViewModel(private val api: YeobaekApi = YeobaekClient.api) : ViewModel() {
-    private val _state = MutableStateFlow<UiState<ScheduleResponse>>(UiState.Loading)
-    val state: StateFlow<UiState<ScheduleResponse>> = _state.asStateFlow()
+/** [isOffline]=true 면 서버 응답이 아니라 [PlanCache] 에 저장된 마지막 계획(로컬 폴백)이다. */
+data class ScheduleData(val response: ScheduleResponse, val isOffline: Boolean = false)
 
-    fun load(startTime: String, stops: List<Long>, allowSubstitution: Boolean = true) {
+class ScheduleViewModel(private val api: YeobaekApi = YeobaekClient.api) : ViewModel() {
+    private val _state = MutableStateFlow<UiState<ScheduleData>>(UiState.Loading)
+    val state: StateFlow<UiState<ScheduleData>> = _state.asStateFlow()
+
+    /** [context] 는 로컬 캐시 저장/조회에만 쓴다(오프라인 폴백 — Room 없이 SharedPreferences). */
+    fun load(context: Context, startTime: String, stops: List<Long>, allowSubstitution: Boolean = true) {
         _state.value = UiState.Loading
         viewModelScope.launch {
             try {
-                _state.value = UiState.Success(
-                    api.schedule(ScheduleRequest(startTime = startTime, stops = stops, allowSubstitution = allowSubstitution))
-                )
+                val res = api.schedule(ScheduleRequest(startTime = startTime, stops = stops, allowSubstitution = allowSubstitution))
+                PlanCache.save(context, res)
+                _state.value = UiState.Success(ScheduleData(res))
             } catch (e: Throwable) {
-                _state.value = UiState.Error(errMessage(e))
+                val cached = PlanCache.load(context)
+                _state.value = if (cached != null) {
+                    UiState.Success(ScheduleData(cached, isOffline = true))
+                } else {
+                    UiState.Error(errMessage(e))
+                }
             }
         }
     }
 
-    fun useSample(data: ScheduleResponse) { _state.value = UiState.Success(data) }
+    fun useSample(data: ScheduleData) { _state.value = UiState.Success(data) }
 }
 
 // ── 지도 히트맵 ──────────────────────────────────────────

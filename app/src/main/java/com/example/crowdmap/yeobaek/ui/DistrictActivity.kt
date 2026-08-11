@@ -156,7 +156,7 @@ class DistrictActivity : AppCompatActivity() {
                 lineupAdapter.submit(emptyList())
                 showEmpty(
                     "명소를 불러오지 못했어요.\n" +
-                        "서버가 켜져 있는지, SERVER_IP 설정이 맞는지 확인해 주세요.\n" +
+                        "서버가 켜져 있는지, local.properties 의 DEV_BASE_URL 설정이 맞는지 확인해 주세요.\n" +
                         "(${e.message ?: "네트워크 오류"})"
                 )
             } finally {

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,21 +28,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.crowdmap.R
 import com.example.crowdmap.yeobaek.compose.components.clickableNoRipple
 import com.example.crowdmap.yeobaek.compose.theme.YeobaekTheme
 import kotlinx.coroutines.launch
 
-private data class OnboardPage(val glyph: String, val eyebrow: String, val title: String, val body: String)
+/** [eyebrow]/[title]/[body] 는 strings.xml 리소스 ID — 로케일(values-en 등)에 따라 자동 번역. */
+private data class OnboardPage(val glyph: String, val eyebrow: Int, val title: Int, val body: Int)
 
 private val pages = listOf(
-    OnboardPage("餘", "여백 · 旅白", "여백을 두고\n여행하세요", "그림의 여백처럼, 여행에도 비움의 여유가 필요합니다. 붐빔을 피해 쉼표가 있는 하루를 설계해요."),
-    OnboardPage("◐", "실시간 혼잡 예보", "붐비기 전에\n먼저 알아요", "서울 121개 예보지점의 시간대별 혼잡을 읽어, 지금 이 순간 한적한 곳을 알려드립니다."),
-    OnboardPage("⇄", "감성 쌍둥이", "같은 감성,\n다른 한적함", "붐비는 명소 대신 값어치가 같은 조용한 대안으로. C++ 엔진이 하루 동선을 다시 짭니다."),
+    OnboardPage("餘", R.string.onboard1_eyebrow, R.string.onboard1_title, R.string.onboard1_body),
+    OnboardPage("◐", R.string.onboard2_eyebrow, R.string.onboard2_title, R.string.onboard2_body),
+    OnboardPage("⇄", R.string.onboard3_eyebrow, R.string.onboard3_title, R.string.onboard3_body),
 )
 
 /**
@@ -59,7 +63,7 @@ fun OnboardingScreen(
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(Modifier.fillMaxWidth().padding(16.dp)) {
             Spacer(Modifier.weight(1f))
-            Text("건너뛰기", color = YeobaekTheme.colors.inkFaint, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.clickableNoRipple(onFinish))
+            Text(stringResource(R.string.onboard_skip), color = YeobaekTheme.colors.inkFaint, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.clickableNoRipple(onFinish))
         }
 
         HorizontalPager(state = state, modifier = Modifier.weight(1f)) { page ->
@@ -91,7 +95,10 @@ fun OnboardingScreen(
                 .padding(vertical = 16.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(if (isLast) "여백 시작하기" else "다음", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(if (isLast) R.string.onboard_start else R.string.onboard_next),
+                color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }
@@ -110,15 +117,15 @@ private fun OnboardPane(page: OnboardPage) {
         ) { Text(page.glyph, color = Color(0xFFEAF6F4), fontSize = 40.sp, fontWeight = FontWeight.Bold) }
 
         Spacer(Modifier.height(34.dp))
-        Text(page.eyebrow.uppercase(), color = YeobaekTheme.colors.brand, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.8.sp)
+        Text(stringResource(page.eyebrow).uppercase(), color = YeobaekTheme.colors.brand, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.8.sp)
         Spacer(Modifier.height(14.dp))
         Text(
-            page.title, style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.onBackground,
+            stringResource(page.title), style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.onBackground,
             textAlign = TextAlign.Center, lineHeight = 40.sp,
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            page.body, color = YeobaekTheme.colors.inkSlate, fontSize = 15.sp, textAlign = TextAlign.Center, lineHeight = 23.sp,
+            stringResource(page.body), color = YeobaekTheme.colors.inkSlate, fontSize = 15.sp, textAlign = TextAlign.Center, lineHeight = 23.sp,
         )
     }
 }

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    디버그 전용 오버라이드: 로컬 FastAPI 서버(10.0.2.2, 192.168.x.x 등)와
+    평문 HTTP 로 통신할 수 있게 허용한다. release 빌드에는 포함되지 않는다.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

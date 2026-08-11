@@ -131,6 +131,22 @@
         android:textStyle="bold"
         android:textSize="12sp" />
 
+    <!-- 여백 스탬프(모은 장소 수) — 누르면 모아보기 -->
+    <TextView
+        android:id="@+id/stamp_chip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="116dp"
+        android:background="@drawable/ye_reco_header_bg"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp"
+        android:text="旅 0"
+        android:textColor="@color/ye_on_primary_container"
+        android:textStyle="bold"
+        android:textSize="12sp" />
+
     <!-- 실시간 제보 버튼 (우하단, 시트 위) -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_report"
