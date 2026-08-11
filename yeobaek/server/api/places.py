@@ -10,6 +10,16 @@ from pydantic import BaseModel
 from ..db import repository
 from ..engine import engine_state
 from ..services.rag import cat_label, LEVEL_LABELS
+from ..services.match_service import forecast_level as _forecast_level
+from ..services import py_forecast
+
+
+def _get_forecast(area_name: str, arrival_unix: int):
+    """엔진 있으면 C++ 경로, 없으면 py_forecast 폴백 — 둘 다 level/ppltn_min/ppltn_max/
+    is_historical 필드를 갖는 객체를 돌려준다(offpeak() 의 근거 표시가 그대로 동작)."""
+    if engine_state.available:
+        return engine_state.forecast(area_name, arrival_unix)
+    return py_forecast.forecast(area_name, arrival_unix)
 
 
 def quiet_score(level) -> int | None:
@@ -69,13 +79,8 @@ def heatmap(lat: float = Query(...), lng: float = Query(...),
     out = []
     for r in rows:
         area = amap.get(r["content_id"], (None, None))[0]
-        level = None
-        if area and engine_state.available:
-            try:
-                fc = engine_state.forecast(area, now)
-                level = int(fc.level) if fc else None
-            except Exception:
-                level = None
+        # area 없으면 예보권 밖(None=중립 회색). area 있으면 엔진/파이썬 폴백 중 가능한 쪽으로 조회.
+        level = _forecast_level(area, now) if area else None
         item = _to_result(r)
         item["level"] = level
         item["quiet_score"] = quiet_score(level)
@@ -89,13 +94,7 @@ def _with_congestion(rows: list[dict], now: int) -> list[dict]:
     out = []
     for r in rows:
         area = amap.get(r["content_id"], (None, None))[0]
-        level = None
-        if area and engine_state.available:
-            try:
-                fc = engine_state.forecast(area, now)
-                level = int(fc.level) if fc else None
-            except Exception:
-                level = None
+        level = _forecast_level(area, now) if area else None
         item = _to_result(r)
         item["level"] = level
         item["quiet_score"] = quiet_score(level)
@@ -150,14 +149,14 @@ def offpeak(content_id: int) -> dict:
     앱의 '왜 이 시간?' 근거 표시에 쓴다("데이터 활용" 신뢰도). 서울 예보권 밖이면 timeline 빈 배열."""
     area = repository.get_area_name(content_id)
     timeline = []
-    if area and engine_state.available:
+    if area:
         now = int(time.time())
         base = now - (now % 3600) + 3600     # 다음 정시부터
         for h in range(12):
             t = base + h * 3600
             fc = None
             try:
-                fc = engine_state.forecast(area, t)
+                fc = _get_forecast(area, t)
             except Exception:
                 fc = None
             lvl = int(fc.level) if fc else None

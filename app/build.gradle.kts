@@ -67,9 +67,11 @@ android {
         }
         release {
             // 릴리스는 반드시 https. network_security_config 가 http 를 차단한다.
+            // 도메인 미보유 → Fly.io 기본 서브도메인 사용(yeobaek/DEPLOY.md 참고).
+            // 배포 후 local.properties 의 PROD_BASE_URL 을 실제 https://<앱이름>.fly.dev/ 로 갱신할 것.
             buildConfigField(
                 "String", "BASE_URL",
-                "\"${localProperties.getProperty("PROD_BASE_URL", "https://api.yeobaek.kr/")}\""
+                "\"${localProperties.getProperty("PROD_BASE_URL", "https://yeobaek-api.fly.dev/")}\""
             )
 
             // R8 는 Retrofit/Gson 리플렉션과 충돌 여지가 있어 첫 출시에서는 끈다.

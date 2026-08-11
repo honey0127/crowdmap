@@ -1,0 +1,17 @@
+# 빌드 컨텍스트에서 제외 — 이미지에 안 넣어도 되거나(호스트 산출물), 오히려 컨테이너 안에서
+# 새로 만드는 것과 충돌하는 것들(엔진의 Windows 빌드 캐시 등).
+.venv/
+.claude/
+.git/
+.gradle/
+scripts/
+data/*.log
+engine/build/
+server/__pycache__/
+**/__pycache__/
+*.pyc
+NEXT_STEPS.md
+PIPELINE_VALIDATION.md
+README.md
+ROADMAP.md
+skills-lock.json

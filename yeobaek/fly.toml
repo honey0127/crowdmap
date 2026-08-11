@@ -1,0 +1,18 @@
+# Fly.io 배포 설정. 앱 이름은 최초 `flyctl launch` 시 고유해야 하므로 필요하면 바꿀 것 —
+# 그러면 서비스 주소도 https://<app 이름>.fly.dev 로 함께 바뀐다.
+app = "yeobaek-api"
+primary_region = "nrt"   # 도쿄 — 한국에서 가장 가까운 Fly 리전(서울 리전 없음)
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

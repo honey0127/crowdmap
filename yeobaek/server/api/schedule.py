@@ -9,6 +9,7 @@ from ..db import repository
 from ..engine import engine_state
 from ..util import kst_iso_to_unix, unix_to_kst_hhmm, dwell_for_category, haversine_km
 from ..services.match_service import find_twins
+from ..services import py_scheduler
 
 router = APIRouter(prefix="/api/v1", tags=["schedule"])
 
@@ -64,10 +65,11 @@ class ScheduleRequest(BaseModel):
 
 @router.post("/schedule")
 def schedule(req: ScheduleRequest) -> dict:
-    if not engine_state.available:
-        raise HTTPException(status_code=503,
-                            detail=f"engine unavailable: {engine_state.import_error}")
-
+    # 엔진(.so) 이 없어도(배포 초기·아키텍처 불일치 등) 여기서 503 으로 끝내지 않는다 —
+    # py_scheduler(순수 파이썬 폴백)로 계속 서비스한다. 아래에서 스케줄러 종류에 따라
+    # 분기하되, 이후 코드(제목 매핑·yeobaek_index 등)는 두 경로가 동일한 필드 모양
+    # (content_id/substituted_from/area_name/arrival_unix/forecast_level/lat/lng/similarity)
+    # 을 갖는 결과를 돌려주므로 공통으로 처리한다.
     try:
         start_unix = kst_iso_to_unix(req.start_time)
     except ValueError:
@@ -79,6 +81,7 @@ def schedule(req: ScheduleRequest) -> dict:
         raise HTTPException(status_code=404, detail=f"unknown content_id(s): {missing}")
 
     area_map = repository.get_area_map(req.stops)
+    use_engine = engine_state.available
 
     sched_stops = []
     for sid in req.stops:  # 입력 순서 보존(치환 없는 baseline 비교 기준)
@@ -89,15 +92,30 @@ def schedule(req: ScheduleRequest) -> dict:
         # 예보지점이 없는 twin 은 스케줄러가 다룰 수 없으니 제외
         twins = [t for t in twins if t.get("area_name")]
         dwell = dwell_for_category(p.get("cat"), settings.DEFAULT_DWELL_SEC)
-        sched_stops.append(engine_state.make_stop(
-            content_id=sid, lat=p["lat"], lng=p["lng"], area_name=area,
-            dwell_sec=dwell, twins=twins,
-        ))
+        if use_engine:
+            sched_stops.append(engine_state.make_stop(
+                content_id=sid, lat=p["lat"], lng=p["lng"], area_name=area,
+                dwell_sec=dwell, twins=twins,
+            ))
+        else:
+            sched_stops.append({
+                "content_id": sid, "lat": p["lat"], "lng": p["lng"], "area_name": area,
+                "dwell_sec": dwell, "twins": twins,
+            })
 
-    weights = engine_state.weights(
-        req.weights.congestion, req.weights.distance, req.weights.similarity)
-    plan = engine_state.optimize(sched_stops, start_unix, weights,
-                                 req.allow_substitution, req.keep_order)
+    weights_dict = {
+        "congestion": req.weights.congestion,
+        "distance": req.weights.distance,
+        "similarity": req.weights.similarity,
+    }
+    if use_engine:
+        weights = engine_state.weights(
+            req.weights.congestion, req.weights.distance, req.weights.similarity)
+        plan = engine_state.optimize(sched_stops, start_unix, weights,
+                                     req.allow_substitution, req.keep_order)
+    else:
+        plan = py_scheduler.optimize(sched_stops, start_unix, weights_dict,
+                                     req.allow_substitution, req.keep_order)
 
     # content_id → title (원본 + 치환 후보 모두 필요)
     all_ids = set(req.stops)
@@ -122,4 +140,5 @@ def schedule(req: ScheduleRequest) -> dict:
         "total_cost": round(plan.total_cost, 4),
         "saved_congestion_pct": plan.saved_congestion_pct,
         "yeobaek_index": _yeobaek_index(plan.ordered),
+        "scheduler_mode": "cpp" if use_engine else "python-fallback",
     }
