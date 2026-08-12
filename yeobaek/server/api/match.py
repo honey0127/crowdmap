@@ -51,6 +51,9 @@ def match(req: MatchRequest) -> dict:
                 "similarity": t["similarity"],
                 "forecast_level": t["forecast_level"],
                 "dist_km": t["dist_km"],
+                # 추천 근거 — 한국관광공사 연관 관광지 순위와 무엇에 기반했는지.
+                "related_rank": t.get("related_rank"),
+                "basis": t.get("basis"),
             }
             for t in twins
         ],

@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from .config import settings
 from .db import repository
 from .engine import engine_state
+from .services import related as related_service
 from .api import match, schedule, card, places, districts, reports
 
 log = logging.getLogger("yeobaek")
@@ -59,5 +60,8 @@ def health() -> dict:
         "engine_error": engine_state.import_error,
         "places_loaded": engine_state.places_loaded,
         "seoul_api_key_set": bool(settings.SEOUL_API_KEY),
+        "tats_api_key_set": bool(settings.TATS_API_KEY),
         "llm_enabled": settings.USE_LLM,
+        # 연관 관광지(관광 빅데이터) 연동 상태 — 키·엔드포인트가 맞는지 여기서 확인.
+        "related": related_service.status(),
     }

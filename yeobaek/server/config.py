@@ -25,6 +25,16 @@ class Settings:
         "TATS_ENDPOINT",
         "https://apis.data.go.kr/B551011/TatsCnctrRateService/tatsCnctrRatedList")
 
+    # 관광지 별 연관 관광지 정보(관광 빅데이터) — 감성 쌍둥이의 공식 근거.
+    # 키는 공공데이터포털 서비스키 하나로 공용이지만, 서비스별 '활용신청'이 따로 필요하다.
+    # 미설정이면 연관 데이터 없이 임베딩 유사도만으로 동작한다(폴백).
+    RLTE_API_KEY: str = _get("RLTE_API_KEY") or _get("TATS_API_KEY") or _get("TOURAPI_KEY")
+    # 오퍼레이션(searchKeyword/areaBasedList) 앞까지의 베이스 URL.
+    # 기관이 버전을 올리면(…Service1 → …Service2) 이 값만 env 로 바꾸면 된다.
+    RLTE_ENDPOINT: str = _get(
+        "RLTE_ENDPOINT",
+        "https://apis.data.go.kr/B551011/TarRlteTarService1")
+
     # ── 데이터 경로 ──
     DB_PATH: str = _get("YEOBAEK_DB", str(DATA_DIR / "yeobaek.db"))
     EMB_VECTORS: str = _get("YEOBAEK_EMB", str(DATA_DIR / "embeddings.npy"))

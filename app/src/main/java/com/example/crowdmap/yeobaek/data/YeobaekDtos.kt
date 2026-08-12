@@ -63,7 +63,20 @@ data class Twin(
     val similarity: Double,
     @SerializedName("forecast_level") val forecastLevel: Int,
     @SerializedName("dist_km") val distKm: Double,
-)
+    // 추천 근거 — 한국관광공사 '연관 관광지' 목록에서의 순위(없으면 null).
+    @SerializedName("related_rank") val relatedRank: Int? = null,
+    // "both" | "embedding" | "related" — 무엇에 근거한 추천인지.
+    val basis: String? = null,
+) {
+    /** 근거 문구 — 카드/리스트에 그대로 노출해 추천 이유를 밝힌다. */
+    val basisLabel: String
+        get() = when {
+            relatedRank != null && basis == "both" -> "감성 유사 + 관광공사 연관 ${relatedRank}위"
+            relatedRank != null -> "관광공사 연관 관광지 ${relatedRank}위"
+            basis == "embedding" -> "감성 유사도 기반"
+            else -> "추천"
+        }
+}
 
 data class MatchResponse(
     val source: Source,
