@@ -15,7 +15,13 @@
       "PowerShell(python --version; python -c \"import sys; print\\(sys.executable\\)\")",
       "PowerShell(python -c \"import fastapi; print\\('FastAPI OK'\\)\" 2>&1; python -c \"import numpy; print\\('numpy OK'\\)\" 2>&1; python -c \"import requests; print\\('requests OK'\\)\" 2>&1)",
       "PowerShell(& \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\\\\yeobaek\\\\.venv\\\\bin\\\\python\" -c \"import fastapi; import numpy; print\\('OK'\\)\")",
-      "PowerShell($env:PYTHONPATH = \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\\\\yeobaek\"; & \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\\\\yeobaek\\\\.venv\\\\bin\\\\python\" -c \"import fastapi; import numpy; print\\('FastAPI/numpy OK'\\)\" 2>&1)"
+      "PowerShell($env:PYTHONPATH = \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\\\\yeobaek\"; & \"C:\\\\Users\\\\dlxog\\\\Desktop\\\\crowdmap-repo\\\\yeobaek\\\\.venv\\\\bin\\\\python\" -c \"import fastapi; import numpy; print\\('FastAPI/numpy OK'\\)\" 2>&1)",
+      "Bash(cp .mcp.json.example .mcp.json)",
+      "Bash(git check-ignore *)",
+      "Bash(grep -c \"\\\\.mcp\\\\.json$\")",
+      "Bash(xargs -I{} echo \"추적 대상에 .mcp.json: {}건 \\(0이어야 정상\\)\")",
+      "Bash(rm -f .mcp.json)",
+      "Bash(python3 -c \"import json;json.load\\(open\\('.mcp.json.example'\\)\\);print\\('✓ example JSON 유효'\\)\")"
     ]
   }
 }

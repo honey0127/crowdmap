@@ -55,16 +55,20 @@ MCP는 **AI 클라이언트용 프로토콜**이다. 안드로이드 앱이나 F
 > Claude Team/Enterprise는 Owner가 **[팀에 추가]** 후 각자 [연결].
 > ChatGPT는 설정 > 앱 > 개발자 모드 > [앱 만들기]에 도구함 URL 등록(Authentication=OAuth).
 
-### 방법 2 — 이 레포의 `.mcp.json` (프로젝트 단위)
+### 방법 2 — 프로젝트 단위 `.mcp.json`
 
-키를 발급받은 뒤 환경변수만 설정하면 된다(키는 파일에 쓰지 않는다):
+`.mcp.json` 은 **커밋하지 않는다**(개발자마다 키·주소가 다르고, 값이 비어 있으면
+Claude Code 가 `INVALID_CONFIG: 'url' is not a valid URL` 로 연결 실패를 띄운다).
+레포에는 `.mcp.json.example` 만 있으므로 복사해서 쓴다:
 
 ```bash
+cp .mcp.json.example .mcp.json     # .mcp.json 은 .gitignore 됨
 export SEOUL_MCP_URL="https://<발급페이지에 안내된 주소>/mcp"
 export SEOUL_MCP_KEY="<발급받은 키>"
 ```
 
-Claude Code를 재시작하고 `/mcp`로 연결 상태를 확인한다.
+두 환경변수를 **먼저 설정한 뒤** Claude Code를 재시작하고 `/mcp`로 연결 상태를 확인한다.
+설정 없이 `.mcp.json` 만 두면 자리표시자가 풀리지 않아 매 세션 오류가 뜬다.
 HTTP 연결이 안 되는 구형 클라이언트라면 문서의 `mcp-remote` 브리지 방식을 쓴다:
 
 ```bash

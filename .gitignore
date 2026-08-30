@@ -15,6 +15,9 @@
 local.properties
 keystore.properties
 *.jks
+# MCP 커넥터 설정은 개발자마다 다른 키/주소를 쓴다 — .mcp.json.example 을 복사해 쓸 것.
+# (미설정 상태의 자리표시자를 커밋해두면 세션마다 연결 오류가 뜬다)
+.mcp.json
 .idea/
 app/build/
 *.tab
