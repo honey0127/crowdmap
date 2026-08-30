@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "seoul-citydata": {
+      "type": "http",
+      "url": "${SEOUL_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${SEOUL_MCP_KEY}"
+      }
+    }
+  }
+}
