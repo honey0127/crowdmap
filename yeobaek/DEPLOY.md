@@ -44,11 +44,43 @@ flyctl secrets set SEOUL_API_KEY=... TOURAPI_KEY=... TATS_API_KEY=...
 
 ## 4) 배포 확인
 
+### 빠른 확인
+
 ```
 curl https://<app 이름>.fly.dev/health
 ```
 
 `{"status":"ok","engine_available":true,"places_loaded":7361,...}` 가 나오면 성공.
+
+### 전체 스모크 테스트 (권장)
+
+앱 API 와 MCP 서버를 한 번에 점검한다. 표준 라이브러리만 쓰므로 바로 실행된다:
+
+```
+python scripts/smoke_deploy.py https://<app 이름>.fly.dev
+```
+
+확인 항목: `/health`(엔진·데이터·키 설정) → `/places/search`·`/match`·`/schedule`·
+`/places/heatmap` → MCP `initialize`·`tools/list` → 도구 5종 실제 호출.
+전부 통과하면 AI 클라이언트에 붙일 커넥터 설정까지 출력한다.
+
+> `places_loaded=0` 이면 DB 가 빈 채로 배포된 것이다.
+> `collect_tourapi.py` 로 데이터를 채운 뒤 **다시 배포**해야 한다
+> (Dockerfile 이 로컬 `data/` 를 이미지에 복사하므로 수집 → 배포 순서를 지킬 것).
+
+### MCP 연결 (심사 시연용)
+
+배포가 확인되면 Claude Desktop/Code 커넥터에 등록한다:
+
+```json
+{
+  "mcpServers": {
+    "yeobaek": { "type": "http", "url": "https://<app 이름>.fly.dev/mcp" }
+  }
+}
+```
+
+연결 후 "경복궁 붐비는데 비슷한 한적한 곳 알려줘" 처럼 물으면 여백 엔진이 답한다.
 
 ## 5) 앱의 PROD_BASE_URL 갱신
 
