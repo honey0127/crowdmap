@@ -79,17 +79,69 @@ npx -y mcp-remote "$SEOUL_MCP_URL" --header "Authorization: Bearer $SEOUL_MCP_KE
   썼다면 기능설명서에 활용 API로 적지 말 것(확인 과정에서 문제가 된다).
 - 발전성(20점) 소재로 쓰고 싶다면 → 아래 "확장 아이디어" 참고.
 
-## 확장 아이디어 — 여백을 *MCP 서버로* 노출하기 (미구현)
+---
 
-지금 방향을 뒤집으면 이야기가 달라진다. **여백이 MCP 서버가 되어** AI 에이전트가
-여백의 기능을 도구로 쓰게 하는 것이다:
+# 여백 MCP 서버 (구현 완료)
 
-| 도구(가칭) | 하는 일 |
-| --- | --- |
-| `find_quiet_alternative` | 붐비는 명소 → 감성 쌍둥이 대안 추천 |
-| `plan_quiet_course` | 출발시각·장소 목록 → 혼잡 회피 코스 |
-| `get_offpeak_hours` | 특정 명소의 덜 붐비는 시간대 |
+방향을 뒤집어, **여백 자체가 AI 에이전트의 도구**가 된다.
+Claude/ChatGPT 에서 이렇게 물으면 여백 엔진이 답한다:
 
-이러면 "여백은 앱일 뿐 아니라 **다른 AI 서비스가 호출할 수 있는 관광 혼잡 회피 엔진**"이
-된다 — 지속성·확장성(발전성 20점) 서술이 강해진다. FastAPI 엔드포인트가 이미 다 있어서
-얇은 MCP 어댑터만 붙이면 되므로 구현 비용도 작다.
+> "경복궁 지금 붐비는데 비슷한 분위기의 한적한 곳 알려줘"
+> "내일 오전 10시에 경복궁·국립중앙박물관·명동 도는 코스 짜줘"
+
+→ 여백은 앱일 뿐 아니라 **다른 AI 서비스가 호출할 수 있는 관광 혼잡 회피 엔진**이 된다.
+
+## 제공 도구
+
+| 도구 | 하는 일 | 입력 |
+| --- | --- | --- |
+| `search_places` | 여백 보유 관광지 이름 검색(다른 도구에 넘길 이름 확인) | `query` |
+| `find_quiet_alternative` | 붐비는 곳 → 비슷한 분위기의 한적한 대안 | `place_name`, `top_k?`, `radius_km?`, `arrival_time?` |
+| `get_offpeak_hours` | 그 장소가 덜 붐비는 시간대(예측 인구 근거 포함) | `place_name` |
+| `plan_quiet_course` | 장소 목록 → 혼잡 회피 하루 코스(순서 재배치·대체) | `place_names[]`, `start_time?`, … |
+| `get_congestion` | 현재 혼잡도(1 여유 ~ 4 붐빔) | `place_name` |
+
+AI 는 `content_id` 를 모르므로 **모든 도구가 장소 이름을 받고** 내부에서 검색해 푼다.
+
+## 엔드포인트
+
+앱 API 와 **같은 서버**에 붙어 있다(별도 배포 불필요).
+
+```
+POST https://<서버주소>/mcp     # JSON-RPC 2.0 (MCP Streamable HTTP)
+GET  https://<서버주소>/mcp     # 도구 목록 등 안내(브라우저 확인용)
+```
+
+## AI 클라이언트에 연결하기
+
+Claude Desktop / Claude Code 의 커넥터 설정에 HTTP MCP 서버로 등록한다:
+
+```json
+{
+  "mcpServers": {
+    "yeobaek": { "type": "http", "url": "https://<서버주소>/mcp" }
+  }
+}
+```
+
+동작 확인(서버만 떠 있으면 됨):
+
+```bash
+curl -s -X POST http://localhost:8000/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | head -c 400
+```
+
+## 구현 노트
+
+- `server/mcp_server.py` — 외부 SDK 없이 JSON-RPC(`initialize`/`tools/list`/`tools/call`)만
+  직접 처리한다. 배포 이미지에 의존성을 늘리지 않기 위해서다.
+- 도구 구현은 **기존 FastAPI 라우트 핸들러를 그대로 호출**한다(전부 동기 함수).
+  로직을 복제하지 않으므로 앱과 MCP 의 답이 어긋날 수 없다.
+- 인증은 없다 — 공개 조회 API 만 노출하며 쓰기 동작(제보 등)은 도구로 열지 않았다.
+
+## 심사에서의 의미 (발전성 20점)
+
+- "앱 하나"가 아니라 **재사용 가능한 엔진**임을 실물로 보여준다.
+- 심사위원이 Claude 에 연결해 직접 질문하는 시연이 가능하다.
+- 관광 데이터 → 혼잡 회피 판단을 **다른 AI 서비스가 가져다 쓰는** 확장 경로가 열린다.

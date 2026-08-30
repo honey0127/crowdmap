@@ -15,6 +15,7 @@ from .db import repository
 from .engine import engine_state
 from .services import related as related_service
 from .api import match, schedule, card, places, districts, reports
+from . import mcp_server
 
 log = logging.getLogger("yeobaek")
 
@@ -43,6 +44,8 @@ app.include_router(card.router)
 app.include_router(places.router)
 app.include_router(districts.router)
 app.include_router(reports.router)
+# 여백을 AI 에이전트의 도구로 노출(POST /mcp). 앱 API 와 같은 서버·같은 로직을 쓴다.
+app.include_router(mcp_server.router)
 
 
 @app.exception_handler(Exception)
