@@ -81,7 +81,6 @@ LOG_FILE="$LOG_DIR/server_$(date +%Y%m%d_%H%M%S).log"
 
 # ── 시작 정보 출력 ───────────────────────────────────────────────
 CORE_COUNT="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo '?')"
-WORKER_COUNT=$(( CORE_COUNT * 2 ))
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
@@ -89,7 +88,7 @@ echo "║          CrowdMap Server 시작            ║"
 echo "╠══════════════════════════════════════════╣"
 echo "║  바이너리  : $BINARY"
 echo "║  포트      : $SERVER_PORT"
-echo "║  CPU 코어  : $CORE_COUNT  →  워커 스레드: $WORKER_COUNT"
+echo "║  CPU 코어  : $CORE_COUNT  (워커 수는 서버 컨트롤러가 1~물리코어−1 에서 조절)"
 echo "║  로그 파일 : $LOG_FILE"
 echo "╚══════════════════════════════════════════╝"
 echo ""

@@ -3,24 +3,26 @@
 
 #include <cstring>
 #include <cerrno>
+#include <algorithm>
 #include <charconv>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <stdexcept>
 
 EpollServer::EpollServer(uint16_t              port,
                          SpatialDensityEngine& engine,
                          ZoneMapper&           zm,
-                         CongestionRouter&     cr,
-                         CacheManager&         cm,
-                         ThreadPool&           pool)
+                         QueryService&         queries,
+                         ClassPool&            simplePool,
+                         ClassPool&            complexPool)
         : port_(port),
           running_(false),
           pool_(4096),                 // 8KB * 4096 = 32MB 수신 버퍼 풀 미리 확보
           densityEngine_(engine),
           zoneMapper_(zm),
-          congestionRouter_(cr),
-          cacheManager_(cm),
-          threadPool_(pool) {
+          queries_(queries),
+          simplePool_(simplePool),
+          complexPool_(complexPool) {
 
     listen_fd_ = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_fd_ < 0) throw std::runtime_error("socket() 생성 실패");
@@ -122,6 +124,11 @@ void EpollServer::handleAccept() {
         }
 
         setNonBlocking(cfd);
+        // 한 연결에 응답 여러 개가 연달아 나갈 때(요청이 여러 개 걸려 있거나 큐 적체가
+        // 풀릴 때) Nagle 이 두 번째 응답을 앞 응답의 ACK 까지 붙잡아 지연이 수십 ms 늘어난다.
+        // 요청-응답 프로토콜이라 작은 패킷을 모을 이유가 없다.
+        int one = 1;
+        setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
         epoll_event ev{};
         ev.events  = EPOLLIN;
@@ -174,20 +181,29 @@ void EpollServer::sweepIdleClients() {
 void EpollServer::logStats() {
     // 완전히 한가하면 침묵 (개발 콘솔 오염 방지)
     if (clients_.empty() && accepted_ == 0 && closed_ == 0 &&
-        lines_ == 0 && queries_ == 0) {
+        lines_ == 0 && querySimple_ == 0 && queryComplex_ == 0) {
         return;
     }
+    auto poolStr = [](ClassPool& p) {
+        return " " + p.name() + "(q=" + std::to_string(p.pending())
+               + " c=" + std::to_string(p.active())
+               + " K=" + std::to_string(p.cap()) + ")";
+    };
+    std::string pools = poolStr(simplePool_);
+    if (&complexPool_ != &simplePool_) pools += poolStr(complexPool_);
+
     Log::info("[Stats] conns=" + std::to_string(clients_.size())
               + " accepted=" + std::to_string(accepted_)
               + " closed=" + std::to_string(closed_)
               + " idle_closed=" + std::to_string(idleClosed_)
               + " lines=" + std::to_string(lines_)
               + " zone_reports=" + std::to_string(zoneReports_)
-              + " queries=" + std::to_string(queries_)
+              + " queries=" + std::to_string(querySimple_)
+              + "/" + std::to_string(queryComplex_)
               + " shed=" + std::to_string(shed_)
-              + " pool_pending=" + std::to_string(threadPool_.pending()));
+              + pools);
     accepted_ = closed_ = idleClosed_ = 0;
-    lines_ = zoneReports_ = queries_ = shed_ = 0;
+    lines_ = zoneReports_ = querySimple_ = queryComplex_ = shed_ = 0;
 }
 
 void EpollServer::handleRead(ClientContext& ctx) {
@@ -235,41 +251,6 @@ void EpollServer::handleRead(ClientContext& ctx) {
     }
 }
 
-// 워커 스레드용 송신 헬퍼: 논블로킹 소켓의 부분 전송(short write)과
-// EAGAIN 을 처리한다. 응답이 짧아(수십 바이트) 보통 한 번에 끝나지만,
-// 송신 버퍼가 가득 찬 느린 클라이언트에서는 잠시(최대 300ms) 기다렸다
-// 재시도하고, 그래도 안 되면 폐기한다 — 느린 소비자가 워커를 오래
-// 붙잡으면 그 자체가 새로운 병목이 되기 때문이다.
-void EpollServer::sendAll(int fd, const char* data, size_t len) {
-    size_t off   = 0;
-    int    waits = 0;
-    while (off < len) {
-        ssize_t n = ::send(fd, data + off, len - off, MSG_NOSIGNAL);
-        if (n > 0) {
-            off += static_cast<size_t>(n);
-            continue;
-        }
-        if (n < 0 && errno == EINTR) continue;
-        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) && waits < 3) {
-            pollfd p{};
-            p.fd     = fd;
-            p.events = POLLOUT;
-            ::poll(&p, 1, 100);
-            ++waits;
-            continue;
-        }
-        return;  // 죽었거나 너무 느린 클라이언트: 응답 폐기 (클라이언트 타임아웃이 처리)
-    }
-}
-
-int EpollServer::intervalHintFor(CongestionLevel level) {
-    switch (level) {
-        case CongestionLevel::CROWDED:  return 30;
-        case CongestionLevel::MODERATE: return 15;
-        default:                        return 10;
-    }
-}
-
 void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
     if (line.empty()) return;
     ++lines_;
@@ -312,21 +293,43 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
                               ? line.substr(comma2 + 1)
                               : line.substr(comma2 + 1, comma3 - comma2 - 1);
 
-    int    userId   = 0;
-    double lat = 0.0, lon = 0.0;
-    int    bleCount = 0;
+    int      userId   = 0;
+    double   lat = 0.0, lon = 0.0;
+    int      bleCount = 0;
+    uint32_t workUs   = 0;   // 실험 빌드: w=<µs> → COMPLEX
+    uint64_t reqId    = 0;   // 실험 빌드: id=<n> → 응답에 그대로
 
     std::from_chars(user_id_sv.data(), user_id_sv.data() + user_id_sv.size(), userId);
     lat = std::atof(std::string(lat_sv).c_str());
     lon = std::atof(std::string(lon_sv).c_str());
 
-    if (comma3 != std::string_view::npos) {
-        std::string_view ble_sv = line.substr(comma3 + 1);
-        constexpr std::string_view BLE_PREFIX = "ble=";
-        if (ble_sv.substr(0, BLE_PREFIX.size()) == BLE_PREFIX) {
-            std::string_view ble_val = ble_sv.substr(BLE_PREFIX.size());
-            std::from_chars(ble_val.data(), ble_val.data() + ble_val.size(), bleCount);
+    // 선택 필드: ",key=value" 반복 (ble=, w=, id=). 모르는 키는 무시한다.
+    size_t pos = comma3;
+    while (pos != std::string_view::npos) {
+        const size_t next = line.find(',', pos + 1);
+        std::string_view field = (next == std::string_view::npos)
+                                 ? line.substr(pos + 1)
+                                 : line.substr(pos + 1, next - pos - 1);
+        pos = next;
+
+        const size_t eq = field.find('=');
+        if (eq == std::string_view::npos) continue;
+        const std::string_view key = field.substr(0, eq);
+        const std::string_view val = field.substr(eq + 1);
+        const char* b = val.data();
+        const char* e = val.data() + val.size();
+        if (key == "ble") {
+            std::from_chars(b, e, bleCount);
         }
+#ifdef CROWDMAP_EXPERIMENT
+        // 클라이언트가 작업량을 정하는 것은 서비스 거부 공격에 쓰일 수 있어 실험 빌드에서만 받는다.
+        else if (key == "w") {
+            std::from_chars(b, e, workUs);
+            workUs = std::min(workUs, QueryService::MAX_WORK_US);
+        } else if (key == "id") {
+            std::from_chars(b, e, reqId);
+        }
+#endif
     }
 
     // ── [Update] Silent Update ──
@@ -335,64 +338,35 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
         return;
     }
 
-    // ── [Query] 조회(userId == 0): 블로킹 가능성이 있으므로 ThreadPool 로 오프로드 ──
-    ++queries_;
+    // ── [Query] 조회(userId == 0): 종류별 큐로 오프로드 ──
+    const bool complex = workUs > 0;
+    ++(complex ? queryComplex_ : querySimple_);
     const int zoneId = zoneMapper_.coordinateToZoneId(lat, lon);
 
+    // 워커가 응답할 동안 리액터가 연결을 닫아 fd 번호가 재사용돼도 엉뚱한 연결로
+    // 보내지 않도록, 작업마다 dup 한 fd 를 넘긴다(작업이 소유하고 응답 후 close).
     const int dupfd = dup(ctx.fd);
     if (dupfd < 0) {
         ++shed_;
         return;
     }
 
-    SpatialDensityEngine* engine  = &densityEngine_;
-    CongestionRouter*     router  = &congestionRouter_;
-    CacheManager*         cache   = &cacheManager_;
+    Job job;
+    job.fd     = dupfd;
+    job.zoneId = zoneId;
+    job.lat    = lat;
+    job.lon    = lon;
+    job.workUs = workUs;
+    job.reqId  = reqId;
 
-    const bool queued = threadPool_.enqueue([dupfd, lat, lon, zoneId, engine, router, cache]() {
-        std::string response;
-
-        if (zoneId == -1) {
-            response = "RELAXED|0.0|interval=10\n";
-        } else {
-            size_t localDensity = engine->getDensity(lat, lon);
-            int zoneReport = engine->getZoneReport(zoneId);
-            size_t effectiveDensity = (zoneReport > 0)
-                ? std::max(localDensity, static_cast<size_t>(zoneReport))
-                : localDensity;
-
-            // 캐시 확인/single-flight/negative cache 는 router 가 일원화해 처리
-            CongestionResult result = router->resolve(lat, lon,
-                                                      static_cast<int>(effectiveDensity),
-                                                      *cache, zoneId);
-
-            // interval 힌트: 혼잡할수록 클라이언트 리포트 주기를 늦춰
-            // 서버 유입량을 원격으로 줄인다 (클라이언트는 자기 위치 조회
-            // 응답의 힌트만 배치 주기에 반영한다)
-            response = std::string(result.levelString()) + "|"
-                       + std::to_string(result.ratio)
-                       + "|interval=" + std::to_string(intervalHintFor(result.level))
-                       + "\n";
-        }
-
-        sendAll(dupfd, response.c_str(), response.length());
-        close(dupfd);
-    });
-
-    if (!queued) {
-        // ── Load shedding: 워커 큐 포화 ──
-        // 새 작업을 쌓으면 지연만 폭발한다. stale 캐시가 있으면 그것으로
+    ClassPool& pool = complex ? complexPool_ : simplePool_;
+    if (!pool.tryEnqueue(job)) {
+        // ── Load shedding: 큐 길이가 입장 상한 K(t) 에 닿음 ──
+        // 더 쌓으면 뒤 순번은 대기 상한(1초)을 넘긴다. stale 캐시가 있으면 그것으로
         // 즉시 응답하고(혼잡 상황이므로 interval=30 으로 감압 힌트),
         // 없으면 응답을 생략한다 — 클라이언트 타임아웃이 우아하게 처리.
         close(dupfd);
         ++shed_;
-
-        CongestionResult stale;
-        if (zoneId != -1 && cacheManager_.getStale(zoneId, stale, 300)) {
-            std::string resp = std::string(stale.levelString()) + "|"
-                               + std::to_string(stale.ratio) + "|interval=30\n";
-            // 리액터 스레드: 논블로킹 1회 시도만. 안 나가면 폐기.
-            ::send(ctx.fd, resp.c_str(), resp.size(), MSG_NOSIGNAL);
-        }
+        queries_.shedReply(ctx.fd, zoneId, reqId);
     }
 }
