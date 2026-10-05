@@ -68,6 +68,7 @@ static double envDouble(const char* key, double def) {
  *   PIN / REACTOR_CPU / WORKER_CPUS   코어 고정             (auto / 첫 물리 코어 / 나머지)
  *   COMPLEX_NICE  COMPLEX 스레드 nice                        (5)
  *   ROUTER_MODE   async|sync    외부 API 를 REFRESH 큐로 / 조회 경로에서 직접 (async)
+ *   DEADLINE_MS   꺼낼 때 이보다 오래 기다린 요청은 처리 없이 옛 캐시 응답. 0 = 끔 (2000, legacy 는 0)
  *   FAKE_API_MS   설정 시 실제 외부 API 대신 이 지연의 가짜 API (실험 D)
  *   MU0_SIMPLE / MU0_COMPLEX  처리 표본이 없을 때의 μ(스레드당 /s) — 실험 0 보정값 (33333 / 100)
  *   CTRL_CSV      설정 시 10ms 컨트롤러 기록 경로
@@ -82,6 +83,7 @@ struct PoolSettings {
     int         cMax        = 1;
     int         complexNice = 5;
     bool        asyncRouter = true;
+    int         deadlineMs  = 2000;   // 꺼낼 때 이보다 오래 기다린 요청은 처리하지 않음. 0 = 끔
     int         fakeApiMs   = 0;
     double      mu0Simple   = 33'333.0;   // 30µs
     double      mu0Complex  = 100.0;      // 10ms
@@ -98,6 +100,7 @@ struct PoolSettings {
             p.dynamicCap  = false;
             p.adaptive    = false;
             p.asyncRouter = false;
+            p.deadlineMs  = 0;   // v4 ThreadPool 은 마감 없이 큐의 모든 작업을 처리했다
         }
         p.split       = optionalEnv("POOL_LAYOUT", p.split ? "split" : "shared") == "split";
         p.dynamicCap  = optionalEnv("CAP_MODE", p.dynamicCap ? "dynamic" : "fixed") == "dynamic";
@@ -109,6 +112,7 @@ struct PoolSettings {
         p.cMax        = std::max(p.cMin, envInt("WORKER_MAX", workerCores));
         p.complexNice = envInt("COMPLEX_NICE", 5);
         p.asyncRouter = optionalEnv("ROUTER_MODE", p.asyncRouter ? "async" : "sync") == "async";
+        p.deadlineMs  = std::max(0, envInt("DEADLINE_MS", p.deadlineMs));
         p.fakeApiMs   = std::max(0, envInt("FAKE_API_MS", 0));
         p.mu0Simple   = envDouble("MU0_SIMPLE", p.mu0Simple);
         p.mu0Complex  = envDouble("MU0_COMPLEX", p.mu0Complex);
@@ -126,6 +130,7 @@ struct PoolSettings {
                                                 + std::to_string(cMax)
                                          : "fixed:" + std::to_string(workers))
                + " router=" + (asyncRouter ? "async" : "sync")
+               + " deadline=" + (deadlineMs ? std::to_string(deadlineMs) + "ms" : "off")
                + (fakeApiMs ? " fake_api=" + std::to_string(fakeApiMs) + "ms" : "")
                + " mu0=" + std::to_string(static_cast<int>(mu0Simple)) + "/"
                + std::to_string(static_cast<int>(mu0Complex))
@@ -238,6 +243,7 @@ int main() {
         o.initialActive = ps.initialActive();
         o.cpus          = workerCpus;
         o.nice          = nice;
+        o.deadlineNs    = static_cast<int64_t>(ps.deadlineMs) * 1'000'000LL;
         cc.pool         = nullptr;
         // 시작 직후 K: 실험 0 에서 잰 μ(MU0_*)로 계산 (활성 스레드 = initialActive)
         o.initialCap = cc.dynamicCap

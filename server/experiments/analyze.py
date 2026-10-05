@@ -11,13 +11,13 @@
 여러 실행의 요청을 합쳐 다시 구한 백분위가 아니다.
 """
 import csv
-import math
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from expcommon import (NAN, Calib, fmt, fmt_ci, fnum, isnum, load_run, load_runs, mean_ci,  # noqa: E402
-                       min_servers_erlang, min_servers_naive, p_wait_gt, read_kv, read_ts)
+                       min_servers_erlang, min_servers_naive, p_wait_gt, plan_ids, read_ts)
 
 CLASSES = ("ALL", "SIMPLE", "COMPLEX")
 
@@ -54,6 +54,8 @@ def flatten(run):
             m[f"{cls}.{k}"] = fnum(row.get(k))
         if isnum(sent) and sent > 0:
             m[f"{cls}.shed_pct"] = 100.0 * (row["shed"] + row["late"]) / sent
+            m[f"{cls}.sshed_pct"] = 100.0 * row["shed"] / sent      # 상한 초과로 안 받음(x=S)
+            m[f"{cls}.late_pct"] = 100.0 * row["late"] / sent       # 받았지만 마감 초과(x=D)
             m[f"{cls}.timeout_pct"] = 100.0 * (row["timeout"] + row["lost"]) / sent
             m[f"{cls}.skip_pct"] = 100.0 * row["skipped"] / sent
             # 대기 목표(q > 임계) 위반 또는 정상 처리 실패 비율
@@ -71,22 +73,38 @@ def flatten(run):
         m["ctrl.reactor_util"] = c["reactor_util"]
         m["ctrl.proc_cores"] = c["proc_cores"]
     if have:
-        m["ctrl.threads"] = threads
+        m["ctrl.threads"] = threads   # 풀 합 (split 은 SIMPLE + COMPLEX)
         m["ctrl.worker_cores"] = cores
         m["ctrl.changes_per_min"] = changes
         m["ctrl.max_q"] = max(c["max_q"] for c in run["ctrl"].values())
     return m
 
 
+def plan_key(meta):
+    """같은 조건의 반복끼리 같아야 하는 설정 (시드는 반복마다 달라서 뺀다)."""
+    lg = re.sub(r"--seed \S+", "", meta.get("LG_ARGS", ""))
+    return (meta.get("SERVER_ENV", ""), " ".join(lg.split()), meta.get("RATE", ""))
+
+
 def group(runs):
-    """COND 별로 묶는다 → {cond: {"meta": 첫 실행 meta, "runs": [평평한 지표...]}}"""
+    """COND 별로 묶는다 → {cond: {"meta", "runs": [평평한 지표], "raw", "discarded", "mismatch"}}
+    생성기 송신 지연 p99 > GENLAG_DISCARD_MS 인 실행은 생성기 포화로 보고 평균에서 뺀다."""
+    limit = envf("GENLAG_DISCARD_MS", 10)
     g = {}
     for r in runs:
         cond = r["meta"].get("COND", r["meta"].get("RUN_ID"))
-        e = g.setdefault(cond, {"meta": r["meta"], "runs": [], "raw": []})
-        e["runs"].append(flatten(r))
+        e = g.setdefault(cond, {"meta": r["meta"], "runs": [], "raw": [], "discarded": [],
+                                "mismatch": []})
+        fl = flatten(r)
+        if fl.get("ALL.gen_lag_p99_ms", 0) > limit:
+            e["discarded"].append(f"{r['meta'].get('RUN_ID')} (생성기 지연 p99 "
+                                  f"{fl['ALL.gen_lag_p99_ms']:.1f}ms)")
+            continue
+        if e["raw"] and plan_key(r["meta"]) != plan_key(e["raw"][0]["meta"]):
+            e["mismatch"].append(r["meta"].get("RUN_ID"))
+        e["runs"].append(fl)
         e["raw"].append(r)
-    return g
+    return g   # 실행이 모두 빠진 조건도 남겨 n=0 으로 보이게 한다
 
 
 def agg(entry, key):
@@ -140,12 +158,17 @@ def plan_notes(exp_dir):
             or "주의" in line]
 
 
-def common_footer(exp_dir, groups):
+def common_footer(exp_dir, groups, extra=()):
     lines = []
-    gen = [fr.get("ALL.gen_lag_p99_ms", NAN) for e in groups.values() for fr in e["runs"]]
-    bad = [x for x in gen if isnum(x) and x > 10]
-    if bad:
-        lines.append(f"- 경고: 생성기 송신 지연 p99 > 10ms 인 실행 {len(bad)}개 — 생성기 포화, 지연에 생성기 몫이 섞임")
+    for cond, e in groups.items():
+        for d in e.get("discarded", []):
+            lines.append(f"- 평균에서 뺀 실행(생성기 포화): {cond} / {d}")
+        if e.get("mismatch"):
+            lines.append(f"- 경고: {cond} 의 반복끼리 설정이 다름(서버 env·생성기 인자·도착률): "
+                         f"{', '.join(e['mismatch'])} — 다른 설정의 결과가 함께 평균됨")
+    if extra:
+        lines.append(f"- 지금 계획에 없는 예전 완료 실행 {len(extra)}개는 보고서에서 뺐음: "
+                     f"{', '.join(extra[:10])}{' …' if len(extra) > 10 else ''}")
     skip = [fr.get("ALL.skip_pct", 0) for e in groups.values() for fr in e["runs"]]
     if any(isnum(x) and x > 0 for x in skip):
         lines.append("- 경고: 생성기가 빈 연결을 못 찾아 보내지 못한 요청이 있음(skip%) — 연결 수·동시 요청 수를 늘릴 것")
@@ -192,7 +215,11 @@ def calstep(run_dir, part):
 
 
 def calwrite(exp0_dir):
-    runs = load_runs(exp0_dir)
+    sess = os.path.join(exp0_dir, "session_runs.txt")
+    only = None
+    if os.path.exists(sess):
+        only = {line.strip() for line in open(sess, encoding="utf-8") if line.strip()}
+    runs = load_runs(exp0_dir, only)
     simple, reactor, complex_s = [], [], None
     for r in runs:
         part = r["meta"].get("PART")
@@ -256,11 +283,10 @@ def calwrite(exp0_dir):
 
 # ── 실험 A ───────────────────────────────────────────────────────────────
 
-def report_a(exp_dir, groups):
-    keys = ["ALL.lat_p99_ms", "ALL.q_p99_ms", "ALL.q_max_ms", "ALL.shed_pct", "ALL.timeout_pct",
-            "ctrl.max_q", "ctrl.worker_cores", "ALL.idc_1s"]
+def report_a(exp_dir, groups, extra=()):
+    keys = ["ALL.lat_p99_ms", "ALL.q_p99_ms", "ALL.q_max_ms", "ALL.sshed_pct", "ALL.late_pct",
+            "ALL.timeout_pct", "ctrl.max_q", "ctrl.worker_cores", "ALL.idc_1s"]
     write_summary_csv(os.path.join(exp_dir, "summary.csv"), groups, keys)
-    cap = None
     rows = []
     order = sorted(groups.items(), key=lambda kv: (fnum(kv[1]["meta"].get("RHO")),
                                                    fnum(kv[1]["meta"].get("SHARE")),
@@ -268,35 +294,44 @@ def report_a(exp_dir, groups):
     for cond, e in order:
         m = e["meta"]
         senv = m.get("SERVER_ENV", "")
-        qc = next((t.split("=")[1] for t in senv.split() if t.startswith("QUEUE_CAP=")), "10000")
-        cap = fnum(qc)
+        cap = fnum(next((t.split("=")[1] for t in senv.split() if t.startswith("QUEUE_CAP=")),
+                        "10000"))
         es = fnum(m.get("ES_US"))
         k_wait = cap * es * 1e-6   # 상한 K 를 1코어 처리 속도로 비우는 시간
         lat, lath, _ = agg(e, "ALL.lat_p99_ms")
         q, qh, _ = agg(e, "ALL.q_p99_ms")
         qmax, _, _ = agg(e, "ALL.q_max_ms")
-        shed, shedh, _ = agg(e, "ALL.shed_pct")
+        sshed, sshedh, _ = agg(e, "ALL.sshed_pct")
+        late, _, _ = agg(e, "ALL.late_pct")
         tmo, _, _ = agg(e, "ALL.timeout_pct")
         mq, _, _ = agg(e, "ctrl.max_q")
-        if isnum(shed) and shed > 0.1:
-            verdict = "부족(상한 도달)"
-        elif isnum(qmax) and qmax > 1000:
-            verdict = "과다(대기 > 1초)"
-        else:
-            verdict = "여유"
-        rows.append([m.get("RHO"), m.get("SHARE"), m.get("SYNC"), fmt(fnum(m.get("RATE")), 0),
-                     fmt(fnum(m.get("PEAK_RATE")), 0), fmt(k_wait, 2), fmt_ci(lat, lath, 1),
-                     fmt_ci(q, qh, 1), fmt(qmax, 0), fmt_ci(shed, shedh, 2), fmt(tmo, 2),
-                     fmt(mq, 0), verdict, len(e["runs"])])
+        cores, _, _ = agg(e, "ctrl.worker_cores")
+        labels = []
+        if isnum(sshed) and sshed > 0.1:
+            labels.append("부족(상한 도달)")
+        if (isnum(late) and late > 0.1) or (isnum(tmo) and tmo > 0.1) or (isnum(qmax) and qmax > 1000):
+            labels.append("과다(대기 > 1초)")
+        verdict = " + ".join(labels) if labels else "여유"
+        if not e["runs"]:
+            verdict = "-"
+        rows.append([m.get("RHO"), fmt(cores, 2), m.get("SHARE"), m.get("SYNC"),
+                     fmt(fnum(m.get("RATE")), 0), fmt(fnum(m.get("PEAK_RATE")), 0), fmt(k_wait, 2),
+                     fmt_ci(lat, lath, 1), fmt_ci(q, qh, 1), fmt(qmax, 0), fmt_ci(sshed, sshedh, 2),
+                     fmt(late, 2), fmt(tmo, 2), fmt(mq, 0), verdict, len(e["runs"])])
     md = ["# 실험 A — 지금 서버(고정 큐 10,000)",
           "",
-          "판정 규칙: shed+late > 0.1% → 부족(상한 도달) / 아니면 서버 큐 대기 최대 > 1초 → 과다 / 그 외 여유.",
-          "K 대기(초) = 상한 × 평균 처리 시간(1코어) = 상한이 꽉 찼을 때 마지막 순번의 대기.",
+          "- ρ(계획) = 보정(v5 split 풀, 스레드 1개)으로 잡은 1코어 기준 이용률. 실측 워커 CPU = 이 서버"
+          "(공용 큐, 스레드 16개)의 워커 스레드가 실제로 쓴 코어 수. 둘이 크게 다르면 ρ 표시는 명목값으로 읽는다.",
+          "- K 대기(초) = 상한 × 평균 처리 시간(1코어): 큐가 꽉 찼을 때 마지막 순번의 대기.",
+          "- shed = 상한 초과로 안 받음(x=S), late = 받았지만 마감 초과(x=D, legacy 는 마감 없음), "
+          "timeout = 3초 안에 응답 없음. q 는 응답을 받은 요청의 서버 큐 대기(late 포함, timeout 제외).",
+          "- 판정: shed > 0.1% → 부족(상한 도달) / late 또는 timeout > 0.1%, 또는 q 최대 > 1초 → "
+          "과다(대기 > 1초). 둘 다면 둘 다 적고, 둘 다 아니면 여유.",
           "",
-          md_table(["ρ", "COMPLEX CPU", "몰림", "λ(/s)", "최대 유입(/s)", "K 대기(s)",
-                    "응답 p99(ms)", "q p99(ms)", "q 최대(ms)", "shed+late(%)", "timeout(%)",
-                    "큐 최대(개)", "판정", "n"], rows), ""]
-    md += common_footer(exp_dir, groups)
+          md_table(["ρ(계획)", "실측 워커 CPU", "COMPLEX CPU", "몰림", "λ(/s)", "최대 유입(/s)",
+                    "K 대기(s)", "응답 p99(ms)", "q p99(ms)", "q 최대(ms)", "shed(%)", "late(%)",
+                    "timeout(%)", "큐 최대(개)", "판정", "n"], rows), ""]
+    md += common_footer(exp_dir, groups, extra)
     return "\n".join(md)
 
 
@@ -318,10 +353,11 @@ def norm(x):
     return f"{v:.1f}" if isnum(v) else str(x)
 
 
-def report_b(exp_dir, groups):
-    keys = ["ALL.q_p99_ms", "ALL.lat_p99_ms", "SIMPLE.q_p99_ms", "COMPLEX.q_p99_ms", "ALL.shed_pct",
-            "ALL.timeout_pct", "ctrl.threads", "ctrl.worker_cores", "ctrl.changes_per_min",
-            "ctrl.reactor_util"]
+def report_b(exp_dir, groups, extra=()):
+    keys = ["ALL.q_p99_ms", "ALL.lat_p99_ms", "SIMPLE.q_p99_ms", "COMPLEX.q_p99_ms",
+            "ALL.sshed_pct", "ALL.late_pct", "ALL.timeout_pct", "ctrl.SIMPLE.mean_c",
+            "ctrl.COMPLEX.mean_c", "ctrl.SHARED.mean_c", "ctrl.worker_cores",
+            "ctrl.changes_per_min", "ctrl.reactor_util"]
     write_summary_csv(os.path.join(exp_dir, "summary.csv"), groups, keys)
     cfg_order = env("B_CONFIGS", "legacy dyncap1 fixed3 adaptive").split()
     rows = []
@@ -334,33 +370,42 @@ def report_b(exp_dir, groups):
         cfg = m.get("CONFIG")
         pred = B_PRED.get((norm(m.get("SHARE")), norm(m.get("SYNC"))), {}).get(cfg)
         q, qh, _ = agg(e, "ALL.q_p99_ms")
+        lat, _, _ = agg(e, "ALL.lat_p99_ms")
         qs, _, _ = agg(e, "SIMPLE.q_p99_ms")
         qc, _, _ = agg(e, "COMPLEX.q_p99_ms")
-        shed, shedh, _ = agg(e, "ALL.shed_pct")
+        sshed, sshedh, _ = agg(e, "ALL.sshed_pct")
+        late, _, _ = agg(e, "ALL.late_pct")
         tmo, _, _ = agg(e, "ALL.timeout_pct")
-        thr, thrh, _ = agg(e, "ctrl.threads")
+        cs, _, _ = agg(e, "ctrl.SIMPLE.mean_c")
+        cc, _, _ = agg(e, "ctrl.COMPLEX.mean_c")
+        csh, _, _ = agg(e, "ctrl.SHARED.mean_c")
+        threads = f"공용 {fmt(csh, 1)}" if isnum(csh) else f"{fmt(cs, 2)} / {fmt(cc, 2)}"
         cores, coresh, _ = agg(e, "ctrl.worker_cores")
         ch, _, _ = agg(e, "ctrl.changes_per_min")
-        rows.append([m.get("SHARE"), m.get("SYNC"), cfg, fmt_ci(q, qh, 1), fmt(qs, 1), fmt(qc, 1),
-                     fmt_ci(shed, shedh, 2), fmt(tmo, 2), fmt_ci(thr, thrh, 2),
+        rows.append([m.get("SHARE"), m.get("SYNC"), cfg, fmt_ci(q, qh, 1), fmt(lat, 1), fmt(qs, 1),
+                     fmt(qc, 1), fmt_ci(sshed, sshedh, 2), fmt(late, 2), fmt(tmo, 2), threads,
                      fmt_ci(cores, coresh, 2), fmt(ch, 1),
                      f"{pred[0]} · {pred[1]} · {pred[2]}" if pred else "-", len(e["runs"])])
     md = ["# 실험 B — 같은 부하에서 설정별 비용",
           "",
-          "q = 서버 큐 대기. 스레드 = 활성 스레드 평균(풀 합, legacy 는 고정 16). "
-          "워커 CPU = 워커 스레드가 쓴 CPU 시간 ÷ 측정 시간(코어 수). 예측 = 설계 시뮬레이션(유체 모델, "
-          "처리시간 분산 대기 제외) p99 대기(ms) · shed(%) · 평균 활성.",
+          "- q = 서버 큐 대기(late 포함, timeout 제외). 응답 p99 = 예정 송신 → 수신 (legacy 처럼 한 코어에 "
+          "스레드가 여럿이면 CPU 를 기다리는 시간이 q 가 아니라 처리 시간에 들어가므로 함께 본다).",
+          "- 활성 스레드 = 종류별 평균 c (SIMPLE / COMPLEX). fixed3 은 종류마다 3개. legacy·dyncap1 은 "
+          "공용 풀 하나. 비용 비교의 기준은 워커 CPU(워커 스레드가 쓴 CPU 시간 ÷ 측정 시간, 코어 수)다.",
+          "- 설계 예측 = 설계 문서의 유체 시뮬레이션(처리시간 분산 대기 제외): p99 대기(ms) · shed(%) · "
+          "평균 활성 서버 수. 시뮬레이션은 종류를 나누지 않은 서버 풀 하나라, 세 번째 값은 위의 종류별 "
+          "활성 스레드와 같은 양이 아니다(워커 CPU 와 비교).",
           "",
-          md_table(["COMPLEX CPU", "몰림", "설정", "q p99 전체(ms)", "q p99 SIMPLE", "q p99 COMPLEX",
-                    "shed+late(%)", "timeout(%)", "스레드", "워커 CPU(코어)", "조정/분", "설계 예측", "n"],
-                   rows), ""]
-    md += common_footer(exp_dir, groups)
+          md_table(["COMPLEX CPU", "몰림", "설정", "q p99 전체(ms)", "응답 p99 전체(ms)", "q p99 SIMPLE",
+                    "q p99 COMPLEX", "shed(%)", "late(%)", "timeout(%)", "활성 스레드",
+                    "워커 CPU(코어)", "조정/분", "설계 예측", "n"], rows), ""]
+    md += common_footer(exp_dir, groups, extra)
     return "\n".join(md)
 
 
 # ── 실험 C ───────────────────────────────────────────────────────────────
 
-def report_c(exp_dir, groups):
+def report_c(exp_dir, groups, extra=()):
     keys = ["COMPLEX.p_bad", "COMPLEX.q_p99_ms", "COMPLEX.shed_pct", "COMPLEX.timeout_pct",
             "ctrl.COMPLEX.mu_median", "ctrl.COMPLEX.svc_us"]
     write_summary_csv(os.path.join(exp_dir, "summary.csv"), groups, keys)
@@ -389,10 +434,21 @@ def report_c(exp_dir, groups):
                          fmt(pred * 100, 3), fmt(mu_m, 1), n])
         em = min_servers_erlang(rate, mu, t, pmax, 0.9) if isnum(mu) else None
         nv = min_servers_naive(rate, mu, 0.9) if isnum(mu) else None
-        verdict.append([fmt(rate, 0), observed_min if observed_min else "> 시험 범위", em or "-", nv or "-",
-                        ("Erlang C" if observed_min == em and em != nv else
-                         "단순 계산" if observed_min == nv and em != nv else
-                         "둘 다" if observed_min == em == nv else "어느 쪽도 아님")])
+        tested_max = max(int(fnum(x["meta"].get("THREADS"))) for x in by_rate[rate])
+        if em is None or nv is None:
+            which = "판정 불가(보정 없음)"
+        elif observed_min is None:
+            # 시험한 c 로는 기준을 못 맞춤: 두 예측이 모두 시험 범위 위면 판정 불가
+            which = ("Erlang C" if em > tested_max >= nv else
+                     "판정 불가(둘 다 시험 범위 밖)" if em > tested_max and nv > tested_max else
+                     "어느 쪽도 아님")
+        elif em == nv:
+            which = "둘 다" if observed_min == em else "어느 쪽도 아님"
+        else:
+            which = ("Erlang C" if observed_min == em else
+                     "단순 계산" if observed_min == nv else "어느 쪽도 아님")
+        verdict.append([fmt(rate, 0), observed_min if observed_min else "> 시험 범위",
+                        em or "-", nv or "-", which])
     md = ["# 실험 C — Erlang C 검증 (COMPLEX 만, 처리 시간 지수분포)",
           "",
           f"P(나쁨) = (q > {t * 1000:g}ms + shed + late + timeout) ÷ 보낸 요청. 기준 1%. "
@@ -403,7 +459,7 @@ def report_c(exp_dir, groups):
           "",
           md_table(["λ(/s)", "실측 최소 c (평균 ≤ 1%)", "Erlang C 최소 c", "단순 계산 최소 c", "실측과 맞는 쪽"],
                    verdict), ""]
-    md += common_footer(exp_dir, groups)
+    md += common_footer(exp_dir, groups, extra)
     return "\n".join(md)
 
 
@@ -418,7 +474,7 @@ def spike_stats(raw, thresh_ms):
     return len(hits), hits
 
 
-def report_d(exp_dir, groups):
+def report_d(exp_dir, groups, extra=()):
     keys = ["SIMPLE.lat_p99_ms", "SIMPLE.lat_p999_ms", "SIMPLE.lat_max_ms", "SIMPLE.q_p999_ms",
             "SIMPLE.shed_pct", "SIMPLE.timeout_pct"]
     write_summary_csv(os.path.join(exp_dir, "summary.csv"), groups, keys)
@@ -443,7 +499,7 @@ def report_d(exp_dir, groups):
           "",
           md_table(["라우터", "p99(ms)", "p99.9(ms)", "최대(ms)", "shed+late(%)", "튐(칸)", "n"], rows),
           ""] + times + [""]
-    md += common_footer(exp_dir, groups)
+    md += common_footer(exp_dir, groups, extra)
     return "\n".join(md)
 
 
@@ -455,23 +511,29 @@ def report_0(exp_dir):
 
 
 def report(exps):
+    """요청한 실험의 runs.csv·summary.csv·summary.md 를 다시 만들고, REPORT.md 는 summary.md 가
+    있는 모든 실험(0, A~D)으로 다시 엮는다(한 실험만 돌려도 다른 실험 절이 사라지지 않게)."""
     root = results_dir()
-    parts = []
-    if os.path.isdir(os.path.join(root, "exp0")) or os.path.exists(os.path.join(root, "calib.env")):
-        parts.append(report_0(os.path.join(root, "exp0")))
     fns = {"A": report_a, "B": report_b, "C": report_c, "D": report_d}
     for exp in exps:
         d = os.path.join(root, exp)
-        runs = load_runs(d)
+        runs = load_runs(d, plan_ids(d))
+        extra = list(load_runs.extra)
         if not runs:
-            parts.append(f"# 실험 {exp} — 완료된 실행 없음")
+            sys.stderr.write(f"[analyze] {exp}: 완료된 실행 없음\n")
             continue
         write_runs_csv(os.path.join(d, "runs.csv"), runs)
-        md = fns[exp](d, group(runs))
+        md = fns[exp](d, group(runs), extra)
         with open(os.path.join(d, "summary.md"), "w", encoding="utf-8") as f:
             f.write(md + "\n")
-        parts.append(md)
         sys.stderr.write(f"[analyze] {exp}: 실행 {len(runs)}개 → {d}/summary.md\n")
+    parts = []
+    if os.path.exists(env("CALIB_FILE", os.path.join(root, "calib.env"))):
+        parts.append(report_0(os.path.join(root, "exp0")))
+    for exp in ("A", "B", "C", "D"):
+        p = os.path.join(root, exp, "summary.md")
+        if os.path.exists(p):
+            parts.append(open(p, encoding="utf-8").read().rstrip())
     with open(os.path.join(root, "REPORT.md"), "w", encoding="utf-8") as f:
         f.write("\n\n".join(parts) + "\n")
     sys.stderr.write(f"[analyze] → {root}/REPORT.md\n")

@@ -140,7 +140,7 @@ void ClassPool::workerLoop(int idx) {
         lk.unlock();
 
         const int64_t deqNs = monoNowNs();
-        if (deqNs - job.tEnqNs > opt_.deadlineNs) {
+        if (opt_.deadlineNs > 0 && deqNs - job.tEnqNs > opt_.deadlineNs) {
             expired_.fetch_add(1, std::memory_order_relaxed);
             expire_(job);
         } else {

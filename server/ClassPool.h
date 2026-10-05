@@ -74,7 +74,7 @@ public:
         size_t           initialCap    = 10'000;
         std::vector<int> cpus;                    // 워커 코어 고정(비우면 고정 안 함)
         int              nice          = 0;       // COMPLEX 는 +5 → SIMPLE 이 코어를 우선 차지
-        int64_t          deadlineNs    = 2'000'000'000LL;
+        int64_t          deadlineNs    = 2'000'000'000LL;   // 0 이하 = 마감 검사 안 함(v4 재현)
     };
 
     ClassPool(Options opt, ProcessFn process, ExpireFn expire);

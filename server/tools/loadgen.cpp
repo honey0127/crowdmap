@@ -392,14 +392,8 @@ public:
         }
         // 남은 요청은 타임아웃 처리
         scanTimeouts(INT64_MAX);
-        // RST 로 닫는다: FIN 으로 닫으면 연결마다 TIME_WAIT 가 60초 남아, 바로 이어지는
-        // 다음 실행이 임시 포트(기본 약 2.8만 개)를 다 못 얻는다.
-        const linger lg{1, 0};
-        for (auto& cn : conns_) {
-            if (cn.fd < 0) continue;
-            setsockopt(cn.fd, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
-            ::close(cn.fd);
-        }
+        for (auto& cn : conns_)   // SO_LINGER{1,0} 은 startConnect 에서 설정 → RST
+            if (cn.fd >= 0) ::close(cn.fd);
         ::close(tfd_);
         ::close(ep_);
     }
@@ -413,6 +407,10 @@ private:
         if (cn.fd < 0) return false;
         int one = 1;
         setsockopt(cn.fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        // 어떤 경로로 닫혀도(정상 종료, _exit(3), SIGTERM 으로 죽음, 끊김) RST 로 닫는다. FIN 으로
+        // 닫으면 연결마다 TIME_WAIT 가 60초 남아, 바로 이어지는 실행이 임시 포트를 다 못 얻는다.
+        const linger lg0{1, 0};
+        setsockopt(cn.fd, SOL_SOCKET, SO_LINGER, &lg0, sizeof(lg0));
         const int r = ::connect(cn.fd, reinterpret_cast<sockaddr*>(&addr_), sizeof(addr_));
         if (r < 0 && errno != EINPROGRESS) {
             ::close(cn.fd);
@@ -625,8 +623,18 @@ private:
             if (slot->measured) ++st.shed;
             ++b.shed;
         } else if (tag == 'D') {
-            if (slot->measured) ++st.late;
+            // 마감 초과: 그만큼 큐에서 기다렸으므로 q 분포에 넣는다(빼면 q p99 가 마감에서 잘린다)
+            uint64_t q = 0;
+            const bool hasQ = field(p, end, "q=", q);
+            if (slot->measured) {
+                ++st.late;
+                if (hasQ) {
+                    st.q.add(static_cast<int64_t>(q));
+                    if (static_cast<double>(q) > c_.qThreshMs * 1000.0) ++st.qOver;
+                }
+            }
             ++b.late;
+            if (hasQ) b.qMax = std::max<uint64_t>(b.qMax, q);
         } else {
             uint64_t q = 0, s = 0;
             field(p, end, "q=", q);

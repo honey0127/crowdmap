@@ -13,6 +13,10 @@ SERVER_BIN=""                               # 서버 기계의 실험 빌드 경
 SERVER_WORKDIR=/tmp/crowdmap-exp            # 서버 기계에서 실행별 로그·CSV 를 쓸 곳 (실행마다 지움)
 # 모든 실행에 공통인 서버 환경변수. 외부 API 는 가짜(100ms, v4 실측 98ms)로 고정해 재현성을 지킨다.
 SERVER_ENV_COMMON="FAKE_API_MS=100"
+# 서버 fd 한도 점검: 서버 hard nofile ≥ LG_CONNS + SERVER_FD_QUEUE + 1000 이어야 한다.
+# 큐에 쌓인 작업마다 dup 한 fd 를 하나씩 쥐므로, 동적 상한 최대(2^17)까지 쌓일 수 있다고 보고 잡았다.
+# 한도를 못 올리는 기계면 줄이되, 큐가 그보다 깊어지면 dup 실패가 shed 로 섞인다.
+SERVER_FD_QUEUE=131072
 # 같은 기계 스모크 예: 리액터 CPU0, 워커 CPU1·2, 생성기 CPU3
 #   SERVER_ENV_COMMON="FAKE_API_MS=100 REACTOR_CPU=0 WORKER_CPUS=1,2"
 #   LOADGEN_TASKSET="taskset -c 3"
@@ -34,6 +38,7 @@ SEED_BASE=1           # 반복 r 의 생성기 시드 = SEED_BASE×1000 + r (같
 REACTOR_FRAC=0.8      # 최대 유입이 리액터 한계 × 이 값을 넘는 조건은 제외(워커가 아니라 리액터를 재게 됨)
 COOLDOWN_S=3          # 실행 사이 쉬는 시간
 MAX_CONSEC_FAIL=3     # 연속 실패가 이만큼이면 환경 문제로 보고 중단
+GENLAG_DISCARD_MS=10  # 생성기 송신 지연 p99 가 이보다 큰 실행은 생성기 포화로 보고 평균에서 뺀다(보고서에 목록)
 
 # ── 결과 ───────────────────────────────────────────────────────────────
 RESULTS_DIR=""                              # 비우면 ../results

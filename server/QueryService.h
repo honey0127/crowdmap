@@ -19,7 +19,7 @@
  *                        SIMPLE/COMPLEX 큐가 따로라 응답 순서가 요청 순서와 다를 수 있다.
  *      |q=<µs>|s=<µs>    큐 대기(꺼냄 − 투입), 처리(송신 직전 − 꺼냄)
  *      |x=S              상한 초과로 받지 않음(shed) → 옛 캐시 응답
- *      |x=D              꺼냈을 때 마감(2초) 초과 → 옛 캐시 응답
+ *      |x=D              꺼냈을 때 마감(DEADLINE_MS) 초과 → 옛 캐시 응답 (+|q=<µs> 기다린 시간)
  *    앱(ServerClient.parseResponse)은 모르는 필드를 무시하므로 호환된다.
  */
 class QueryService {
@@ -50,7 +50,8 @@ public:
 
 private:
     // 옛 캐시(최대 300초) 응답 문자열. 없으면 빈 문자열 (실험 빌드는 NONE 으로 항상 응답)
-    std::string staleLine(int zoneId, uint64_t reqId, char tag);
+    // waitUs ≥ 0 이면 실험 빌드에서 |q=<µs> 를 붙인다(마감 초과: 그만큼 기다렸다는 기록)
+    std::string staleLine(int zoneId, uint64_t reqId, char tag, int64_t waitUs = -1);
 
     SpatialDensityEngine& engine_;
     CongestionRouter&     router_;

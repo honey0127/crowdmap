@@ -108,7 +108,7 @@ void QueryService::process(Job& job, int64_t deqNs) {
     job.fd = -1;
 }
 
-std::string QueryService::staleLine(int zoneId, uint64_t reqId, char tag) {
+std::string QueryService::staleLine(int zoneId, uint64_t reqId, char tag, int64_t waitUs) {
     CongestionResult stale;
     std::string line;
     if (zoneId != -1 && cache_.getStale(zoneId, stale, STALE_MAX_AGE_SEC)) {
@@ -119,18 +119,21 @@ std::string QueryService::staleLine(int zoneId, uint64_t reqId, char tag) {
     // 부하 생성기가 shed·마감 초과를 타임아웃과 구분해 셀 수 있도록 항상 응답한다
     if (line.empty()) line = "NONE|0|interval=" + std::to_string(SHED_INTERVAL_HINT);
     if (reqId) line += "|id=" + std::to_string(reqId);
+    if (waitUs >= 0) line += "|q=" + std::to_string(waitUs);
     line += "|x=";
     line += tag;
 #else
     (void)reqId;
     (void)tag;
+    (void)waitUs;
 #endif
     if (!line.empty()) line += "\n";
     return line;
 }
 
 void QueryService::expire(Job& job) {
-    const std::string line = staleLine(job.zoneId, job.reqId, 'D');
+    const std::string line =
+            staleLine(job.zoneId, job.reqId, 'D', (monoNowNs() - job.tEnqNs) / 1000);
     if (!line.empty()) sendAll(job.fd, line.data(), line.size());
     ::close(job.fd);
     job.fd = -1;

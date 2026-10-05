@@ -7,12 +7,18 @@
 #   3) 리액터 한계: 워커 3코어, SIMPLE 만, 도착률을 올려 가며 처음 실패하기 직전 값.
 #      통과 = 정상 응답 ≥ 99.9%, (응답 지연 − 큐 대기 − 처리) p99 ≤ CAL_REST_P99_MS(5ms),
 #      생성기 송신 지연 p99 ≤ CAL_GENLAG_P99_MS(2ms). 생성기가 먼저 포화되면 하한값으로 기록.
-# 이어하기: 완료된 단계(DONE)는 다시 돌리지 않고 판정만 다시 한다.
+# 이어하기: 완료된 단계(DONE)는 서명(서버 env·생성기 인자·바이너리)이 같으면 다시 돌리지 않고
+#   판정만 다시 한다. 서명이 다르면 다시 잰다. 처음부터 다시 재려면 results/exp0 를 지운다.
+# 실패: 한 단계가 실패하면 한 번 더 시도하고, 그래도 실패하면 calib.env 를 쓰지 않고 멈춘다
+#   (일부 단계만으로 만든 보정 표는 도착률을 2~4배 틀리게 만든다).
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 load_conf
 OUT="$RESULTS_DIR/exp0"
 mkdir -p "$OUT"
 : > "$OUT/plan.log"
+# 이번 실행에서 확인한 단계만 보정에 쓴다(예전 세션에서 더 높은 도착률까지 잰 결과가 섞이지 않게)
+SESSION="$OUT/session_runs.txt"
+[ "$DRY_RUN" = "1" ] || : > "$SESSION"
 
 sweep() {   # <plan 대상> <calstep 종류>
     local target=$1 kind=$2 plan="$OUT/plan_$1.txt"
@@ -26,9 +32,12 @@ sweep() {   # <plan 대상> <calstep 종류>
     while IFS='|' read -r -u 3 id senv lgargs expect meta; do
         log "[exp0 $kind] $id"
         if ! run_one exp0 "$id" "$senv" "$lgargs" "$expect" "$meta"; then
-            log "  실패 — 이 단계의 남은 도착률은 건너뜀"
-            break
+            log "  실패 — 한 번 더 시도"
+            sleep 5
+            run_one exp0 "$id" "$senv" "$lgargs" "$expect" "$meta" \
+                || die "보정 단계 $id 가 두 번 실패 — calib.env 를 쓰지 않음. $OUT/$id/ 의 FAILED·loadgen.log·server.log 확인"
         fi
+        echo "$id" >> "$SESSION"
         eval "$(python3 "$EXP_DIR/analyze.py" calstep "$OUT/$id" "$kind")"
         case $kind in
             simple)

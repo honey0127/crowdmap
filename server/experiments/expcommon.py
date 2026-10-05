@@ -100,8 +100,10 @@ def measurement_window(summary_row, meta):
     t0 = summary_row.get("t0_epoch", NAN)
     w = summary_row.get("warmup_s", NAN)
     d = summary_row.get("duration_s", NAN)
-    off = fnum(meta.get("CLOCK_OFFSET_S", "0"), 0.0)
-    if not (isnum(t0) and isnum(w) and isnum(d)):
+    off = fnum(meta.get("CLOCK_OFFSET_S", "0"), NAN)
+    if not (isnum(t0) and isnum(w) and isnum(d) and isnum(off)):
+        return None
+    if abs(off) > 60:   # ssh 실패로 생긴 터무니없는 값: 구간을 틀리게 자르느니 컨트롤러 지표를 비운다
         return None
     return t0 + w + off, t0 + w + d + off
 
@@ -168,17 +170,41 @@ def load_run(run_dir):
     return {"dir": run_dir, "meta": meta, "summary": summ, "ctrl": ctrl, "window": window}
 
 
-def load_runs(exp_dir):
-    runs = []
+def plan_ids(exp_dir):
+    """실험 디렉터리의 plan*.txt 에 있는 run_id 집합. 계획 파일이 없으면 None."""
     if not os.path.isdir(exp_dir):
-        return runs
-    for name in sorted(os.listdir(exp_dir)):
-        d = os.path.join(exp_dir, name)
-        if os.path.isdir(d):
+        return None
+    ids, found = set(), False
+    for name in os.listdir(exp_dir):
+        if name.startswith("plan") and name.endswith(".txt"):
+            found = True
+            with open(os.path.join(exp_dir, name), encoding="utf-8") as f:
+                ids.update(line.split("|", 1)[0] for line in f if line.strip())
+    return ids if found else None
+
+
+def load_runs(exp_dir, only=None):
+    """완료된 실행을 읽는다. only(run_id 집합)가 있으면 그 실행만 읽고, 나머지 완료 실행 이름은
+    load_runs.extra 에 남긴다(지금 계획에 없는 예전 결과 — 보고서에 경고로 싣는다).
+    '_' 로 시작하는 디렉터리(_stale, _probe)는 건너뛴다."""
+    runs, extra = [], []
+    if os.path.isdir(exp_dir):
+        for name in sorted(os.listdir(exp_dir)):
+            d = os.path.join(exp_dir, name)
+            if not os.path.isdir(d) or name.startswith("_"):
+                continue
+            if only is not None and name not in only:
+                if os.path.exists(os.path.join(d, "DONE")):
+                    extra.append(name)
+                continue
             r = load_run(d)
             if r:
                 runs.append(r)
+    load_runs.extra = extra
     return runs
+
+
+load_runs.extra = []
 
 
 # ── 보정값과 도착률 ──────────────────────────────────────────────────────

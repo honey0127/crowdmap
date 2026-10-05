@@ -17,6 +17,11 @@ die()  { log "오류: $*"; exit 1; }
 load_conf() {
     local conf="${EXP_CONF:-$EXP_DIR/exp.conf}"
     CONF_PATH=""
+    # 명시한 설정 파일이 없으면 멈춘다: 기본값(같은 기계)으로 조용히 넘어가면 서버와 생성기가
+    # 한 VM 의 CPU 를 나눠 쓰는 실험이 끝까지 돌아 버린다
+    if [ -n "${EXP_CONF:-}" ] && [ ! -f "$EXP_CONF" ]; then
+        die "EXP_CONF 파일 없음: $EXP_CONF"
+    fi
     if [ -f "$conf" ]; then
         # shellcheck disable=SC1090
         source "$conf"
@@ -52,6 +57,9 @@ load_conf() {
     : "${COOLDOWN_S:=3}"
     : "${START_OVERHEAD_S:=4}"
     : "${MAX_CONSEC_FAIL:=3}"
+    : "${GENLAG_DISCARD_MS:=10}"
+    # 서버 fd: 연결마다 1개 + 큐에 쌓인 작업마다 dup 한 1개. 동적 상한 최대 2^17 = 131072
+    : "${SERVER_FD_QUEUE:=131072}"
     # 결과
     : "${RESULTS_DIR:=$SERVER_SRC_DIR/results}"
     : "${CALIB_FILE:=$RESULTS_DIR/calib.env}"
@@ -67,7 +75,7 @@ load_conf() {
 
     # plan.py / analyze.py 가 읽도록 내보낸다 (실험별 변수 A_*, B_*, C_*, D_*, CAL_* 포함)
     local v
-    for v in $(compgen -v | grep -E '^(SERVER_|LG_|WARMUP|DURATION|TIMEOUT|WORK_US|SYNC_|Q_THRESHOLD_MS|SEED_BASE|REACTOR_FRAC|COOLDOWN_S|START_OVERHEAD_S|RESULTS_DIR|CALIB_FILE|REPS_|A_|B_|C_|D_|CAL_)'); do
+    for v in $(compgen -v | grep -E '^(SERVER_|LG_|WARMUP|DURATION|TIMEOUT|WORK_US|SYNC_|Q_THRESHOLD_MS|SEED_BASE|REACTOR_FRAC|COOLDOWN_S|START_OVERHEAD_S|RESULTS_DIR|CALIB_FILE|GENLAG_DISCARD_MS|REPS_|A_|B_|C_|D_|CAL_)'); do
         export "${v?}"
     done
 }
@@ -144,12 +152,42 @@ wait_port_free() {   # 이전 서버가 포트를 놓을 때까지 (최대 10초
     return 0
 }
 
-# 서버 시계 − 이 기계 시계(초). ssh 왕복의 가운데 시각과 비교한다.
+# 서버 시계 − 이 기계 시계(초). ssh 왕복의 가운데 시각과 비교한다. 3번 재서 왕복이 가장 짧은
+# 표본을 쓴다(접속 지연이 클수록 가운데 가정의 오차가 커진다). 실패하면 종료 코드 1.
 clock_offset() {
-    if [ -z "$SERVER_SSH" ]; then echo 0; return; fi
-    local a r b
-    a=$(date +%s.%N); r=$(srv_exec 'date +%s.%N'); b=$(date +%s.%N)
-    python3 -c "print(f'{$r - ($a + $b) / 2:.4f}')"
+    if [ -z "$SERVER_SSH" ]; then echo 0; return 0; fi
+    local i a r b samples=""
+    for i in 1 2 3; do
+        a=$(date +%s.%N)
+        r=$(srv_exec 'date +%s.%N') || continue
+        b=$(date +%s.%N)
+        [[ "$r" =~ ^[0-9]+\.[0-9]+$ ]] || continue
+        samples+="$a $r $b;"
+    done
+    [ -n "$samples" ] || return 1
+    python3 -c "
+s = [tuple(map(float, x.split())) for x in '$samples'.split(';') if x]
+a, r, b = min(s, key=lambda t: t[2] - t[0])
+print(f'{r - (a + b) / 2:.4f}')"
+}
+
+# 실행 서명: 서버 env, 생성기 인자, 공통 설정, 두 바이너리. 이어하기 때 이 값이 다르면
+# 예전 결과(다른 보정값·창 길이·바이너리)를 쓰지 않고 다시 잰다.
+plan_sig() {   # <서버 env> <생성기 인자>
+    printf '%s|%s|%s|%s|%s|%s|%s' "$1" "$2" "$SERVER_ENV_COMMON" "$LG_THREADS" \
+        "$LG_OUTSTANDING" "$TIMEOUT" "${BIN_SIG:-}" | sha1sum | cut -c1-16
+}
+
+# DONE 이 있고 서명이 같으면 0. 서명이 다르면 예전 결과를 _stale/ 로 옮기고 1.
+run_is_done() {   # <exp> <run_id> <서명>
+    local dir="$RESULTS_DIR/$1/$2" old
+    [ -f "$dir/DONE" ] || return 1
+    old=$(grep -E '^PLAN_SIG=' "$dir/meta.env" 2>/dev/null | cut -d= -f2)
+    [ "$old" = "$3" ] && return 0
+    mkdir -p "$RESULTS_DIR/$1/_stale"
+    mv "$dir" "$RESULTS_DIR/$1/_stale/$2.$(date +%Y%m%d%H%M%S)"
+    log "  $2: 예전 결과의 설정·바이너리가 지금 계획과 달라 _stale/ 로 옮기고 다시 잰다"
+    return 1
 }
 
 CURRENT_PID=""
@@ -160,7 +198,7 @@ on_interrupt() {
     fi
     exit 130
 }
-trap on_interrupt INT TERM
+trap on_interrupt INT TERM HUP
 
 # ── 사전 점검 ────────────────────────────────────────────────────────────
 nofile_ok() {   # <hard limit 문자열> <필요 수>
@@ -169,7 +207,7 @@ nofile_ok() {   # <hard limit 문자열> <필요 수>
 }
 
 preflight() {   # <exp>
-    local exp=$1 need=$((LG_CONNS + 1000)) h lo hi
+    local exp=$1 need=$((LG_CONNS + 1000)) sneed=$((LG_CONNS + SERVER_FD_QUEUE + 1000)) h lo hi
     command -v python3 >/dev/null || die "python3 필요"
     [ -x "$LOADGEN_BIN" ] || die "부하 생성기 없음: $LOADGEN_BIN (cmake --build build-exp)"
     if [ -n "$SERVER_SSH" ]; then
@@ -181,11 +219,16 @@ preflight() {   # <exp>
     h=$(ulimit -Hn)
     nofile_ok "$h" "$need" || die "생성기 fd 한도 $h < $need (/etc/security/limits.conf 의 nofile)"
     h=$(srv_exec 'ulimit -Hn')
-    nofile_ok "$h" "$need" || die "서버 fd 한도 $h < $need"
+    nofile_ok "$h" "$sneed" || die "서버 fd 한도 $h < $sneed (연결 $LG_CONNS + 큐에 쌓인 작업마다 dup fd 최대 $SERVER_FD_QUEUE)"
     read -r lo hi < /proc/sys/net/ipv4/ip_local_port_range
     [ $((hi - lo)) -ge "$need" ] || die "생성기 임시 포트 범위 $lo-$hi 가 연결 수보다 좁음 (sysctl net.ipv4.ip_local_port_range)"
 
     port_open && die "$SERVER_HOST:$SERVER_PORT 에 이미 무언가 떠 있음 — 이전 서버를 정리할 것"
+    clock_offset >/dev/null || die "서버 시계를 읽지 못함 (ssh 'date +%s.%N')"
+    # 바이너리 지문: 실행 서명에 넣어, 바이너리가 바뀌면 예전 결과를 다시 쓰지 않게 한다
+    BIN_SIG="$(srv_exec "md5sum '$SERVER_BIN'" | cut -c1-12)-$(md5sum "$LOADGEN_BIN" | cut -c1-12)"
+    [ ${#BIN_SIG} -ge 25 ] || die "바이너리 지문을 만들지 못함"
+    export BIN_SIG
 
     # 실험 빌드인지 확인: 응답에 id= 와 q= 가 붙어야 한다
     local pid line
@@ -234,15 +277,22 @@ PY
 # 반환: 0 완료(또는 이미 완료), 1 실패
 run_one() {
     local exp=$1 run_id=$2 senv=$3 lgargs=$4 expect=$5 metakv=$6
-    local dir="$RESULTS_DIR/$exp/$run_id"
-    if [ -f "$dir/DONE" ]; then
+    local dir="$RESULTS_DIR/$exp/$run_id" sig
+    sig=$(plan_sig "$senv" "$lgargs")
+    if run_is_done "$exp" "$run_id" "$sig"; then
         return 0
     fi
     rm -rf "$dir"; mkdir -p "$dir"
 
     local offset pid rc
-    offset=$(clock_offset)
+    if ! offset=$(clock_offset); then
+        echo "서버 시계 측정 실패(ssh)" > "$dir/FAILED"
+        log "  실패: 서버 시계를 읽지 못함"
+        return 1
+    fi
     {
+        echo "PLAN_SIG=$sig"
+        echo "BIN_SIG=${BIN_SIG:-}"
         echo "EXP=$exp"
         echo "RUN_ID=$run_id"
         echo "SERVER_ENV=\"$senv\""
@@ -272,7 +322,9 @@ run_one() {
 
     # 생성기가 멈추는 경우를 대비한 상한: 예상 시간 + 2분
     # shellcheck disable=SC2086
-    timeout $((expect + 120)) $LOADGEN_TASKSET "$LOADGEN_BIN" < /dev/null \
+    # --foreground: 생성기를 이 셸의 전경 프로세스 그룹에 둬 Ctrl-C 가 바로 닿게 한다
+    # (없으면 timeout 이 따로 프로세스 그룹을 만들어 Ctrl-C 가 이번 실행이 끝날 때까지 미뤄진다)
+    timeout --foreground $((expect + 120)) $LOADGEN_TASKSET "$LOADGEN_BIN" < /dev/null \
         --host "$SERVER_HOST" --port "$SERVER_PORT" \
         --threads "$LG_THREADS" --outstanding "$LG_OUTSTANDING" --timeout "$TIMEOUT" \
         $lgargs --label "$run_id" --out "$dir/lg" > "$dir/loadgen.log" 2>&1
@@ -317,6 +369,7 @@ run_plan() {
         ids+=("$id"); envs+=("$senv"); args+=("$lgargs"); exps+=("$expect"); metas+=("$meta")
         [ -f "$RESULTS_DIR/$exp/$id/DONE" ] || remain_s=$((remain_s + expect))
     done < "$plan"
+    # 남은 시간은 DONE 만 보고 어림한다(서명이 달라 다시 잴 실행은 돌면서 더해진다)
     total=${#ids[@]}
     log "실험 $exp: $total회 중 남은 실행 예상 $((remain_s / 60))분"
     if [ "$DRY_RUN" = "1" ]; then
@@ -328,7 +381,7 @@ run_plan() {
 
     for ((i = 0; i < total; i++)); do
         local id=${ids[$i]}
-        if [ -f "$RESULTS_DIR/$exp/$id/DONE" ]; then
+        if run_is_done "$exp" "$id" "$(plan_sig "${envs[$i]}" "${args[$i]}")"; then
             done_n=$((done_n + 1)); continue
         fi
         log "[$exp $((i + 1))/$total] $id (남은 약 $((remain_s / 60))분)"

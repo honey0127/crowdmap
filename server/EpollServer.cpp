@@ -347,7 +347,10 @@ void EpollServer::parseLine(ClientContext& ctx, std::string_view line) {
     // 보내지 않도록, 작업마다 dup 한 fd 를 넘긴다(작업이 소유하고 응답 후 close).
     const int dupfd = dup(ctx.fd);
     if (dupfd < 0) {
+        // fd 한도 소진(큐에 쌓인 작업마다 dup 한 fd 를 하나씩 쥐고 있다): 버리되 shed 로 응답해
+        // 클라이언트·부하 생성기가 타임아웃이 아니라 shed 로 셀 수 있게 한다
         ++shed_;
+        queries_.shedReply(ctx.fd, zoneId, reqId);
         return;
     }
 
