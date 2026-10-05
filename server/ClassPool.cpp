@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <pthread.h>
 #include <unistd.h>
 
 int64_t monoNowNs() {
@@ -21,7 +22,20 @@ ClassPool::ClassPool(Options opt, ProcessFn process, ExpireFn expire)
     workers_.reserve(static_cast<size_t>(n));
     for (int i = 0; i < n; ++i) {
         workers_.emplace_back([this, i] { workerLoop(i); });
+        clockid_t cid;
+        if (pthread_getcpuclockid(workers_.back().native_handle(), &cid) == 0)
+            cpuClocks_.push_back(cid);
     }
+}
+
+double ClassPool::cpuSeconds() const {
+    double sum = 0.0;
+    for (clockid_t cid : cpuClocks_) {
+        timespec ts;
+        if (clock_gettime(cid, &ts) == 0)
+            sum += static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
+    }
+    return sum;
 }
 
 ClassPool::~ClassPool() {

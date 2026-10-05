@@ -24,3 +24,7 @@ server/build/
 server/build_test/
 logs/
 *.bak
+# v5 실험 결과(실행마다 수 MB)와 기계별 실험 설정
+server/results/
+server/experiments/exp.conf
+server/experiments/__pycache__/

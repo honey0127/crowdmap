@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <ctime>
 #include <string>
 #include <thread>
 #include <vector>
@@ -74,6 +75,12 @@ public:
     void start();
     void stop();
 
+    // 리액터 스레드의 CPU 시계 (pthread_getcpuclockid). CSV 의 reactor_cpu_s 열에 쓴다.
+    void setReactorClock(clockid_t cid) {
+        reactorClock_    = cid;
+        hasReactorClock_ = true;
+    }
+
 private:
     struct State {
         ClassConfig  cfg;
@@ -122,6 +129,12 @@ private:
     std::atomic<bool>  running_{false};
     std::thread        thread_;
     int64_t            t0Ns_ = 0;
+    clockid_t          reactorClock_    = CLOCK_THREAD_CPUTIME_ID;
+    bool               hasReactorClock_ = false;
+    // 주기마다 한 번 읽어 모든 종류의 행에 같은 값을 쓴다
+    double             epochSec_      = 0.0;   // 벽시계(UNIX 초) — 부하 생성기 측정 구간과 맞추는 용도
+    double             reactorCpuSec_ = 0.0;
+    double             procCpuSec_    = 0.0;
 };
 
 #endif // POOL_CONTROLLER_H

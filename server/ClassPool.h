@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <ctime>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -96,6 +97,9 @@ public:
 
     PoolSnapshot snapshot();
 
+    // 이 풀의 워커 스레드들이 쓴 CPU 시간 합(초). 재워 둔 스레드는 늘지 않는다.
+    double cpuSeconds() const;
+
 private:
     struct alignas(64) WorkerStats {        // 스레드별(쓰는 쪽 1개) → 원자적 RMW 불필요
         std::atomic<uint64_t> done{0};
@@ -128,6 +132,7 @@ private:
 
     std::unique_ptr<WorkerStats[]> stats_;
     std::vector<std::thread>       workers_;
+    std::vector<clockid_t>         cpuClocks_;   // 워커별 CPU 시계 (다른 스레드에서 읽을 수 있다)
 };
 
 #endif // CLASS_POOL_H

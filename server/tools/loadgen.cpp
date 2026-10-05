@@ -60,6 +60,8 @@ struct Config {
     double      warmup      = 10;
     double      duration    = 75;      // 버스트 주기 25초의 3배
     double      timeout     = 3.0;     // 앱 READ_TIMEOUT
+    double      qThreshMs   = 50;      // 서버 큐 대기가 이 값을 넘은 비율을 센다 (대기 목표)
+    double      minConnFrac = 0.99;    // 연결이 이 비율보다 적게 되면 부하를 걸지 않고 종료(코드 3)
     int         zones       = 5;
     uint64_t    seed        = 1;
     std::string out;                   // 결과 파일 접두어
@@ -78,6 +80,8 @@ void usage() {
         "  --work-us W --work-dist fixed|exp      COMPLEX 작업량(10000µs), 분포(fixed)\n"
         "  --sync-frac f --sync-width w --sync-period P --sync-offset o   몰림(0, 3, 25, 0)\n"
         "  --warmup s --duration s --timeout s    (10, 75, 3)\n"
+        "  --q-threshold-ms T           q > T 인 응답 수를 따로 셈(50)\n"
+        "  --min-conn-frac F            연결 성공률이 F 미만이면 종료 코드 3(0.99)\n"
         "  --zones n --seed n --out prefix --label name\n");
 }
 
@@ -111,6 +115,8 @@ bool parseArgs(int argc, char** argv, Config& c) {
         else if (a == "--warmup") c.warmup = std::atof(next("--warmup"));
         else if (a == "--duration") c.duration = std::atof(next("--duration"));
         else if (a == "--timeout") c.timeout = std::atof(next("--timeout"));
+        else if (a == "--q-threshold-ms") c.qThreshMs = std::atof(next("--q-threshold-ms"));
+        else if (a == "--min-conn-frac") c.minConnFrac = std::atof(next("--min-conn-frac"));
         else if (a == "--zones") c.zones = std::atoi(next("--zones"));
         else if (a == "--seed") c.seed = std::strtoull(next("--seed"), nullptr, 10);
         else if (a == "--out") c.out = next("--out");
@@ -198,14 +204,17 @@ enum Cls { SIMPLE = 0, COMPLEX = 1 };
 
 struct ClassStats {
     uint64_t sent = 0, ok = 0, shed = 0, late = 0, timeout = 0, skipped = 0, lost = 0;
+    uint64_t qOver = 0;   // 정상 처리 중 서버 큐 대기 > --q-threshold-ms
     Hist     lat;     // 응답한 전부(ok + shed + late): 예정 송신 → 수신
     Hist     latOk;   // 정상 처리만
     Hist     q;       // 서버 큐 대기 (ok)
     Hist     s;       // 서버 처리 (ok)
+    Hist     rest;    // 응답 지연 − q − s (ok): 네트워크 + 리액터 + 생성기. 리액터 포화 판정용
     void merge(const ClassStats& o) {
         sent += o.sent; ok += o.ok; shed += o.shed; late += o.late;
-        timeout += o.timeout; skipped += o.skipped; lost += o.lost;
+        timeout += o.timeout; skipped += o.skipped; lost += o.lost; qOver += o.qOver;
         lat.merge(o.lat); latOk.merge(o.latOk); q.merge(o.q); s.merge(o.s);
+        rest.merge(o.rest);
     }
 };
 
@@ -383,8 +392,14 @@ public:
         }
         // 남은 요청은 타임아웃 처리
         scanTimeouts(INT64_MAX);
-        for (auto& cn : conns_)
-            if (cn.fd >= 0) ::close(cn.fd);
+        // RST 로 닫는다: FIN 으로 닫으면 연결마다 TIME_WAIT 가 60초 남아, 바로 이어지는
+        // 다음 실행이 임시 포트(기본 약 2.8만 개)를 다 못 얻는다.
+        const linger lg{1, 0};
+        for (auto& cn : conns_) {
+            if (cn.fd < 0) continue;
+            setsockopt(cn.fd, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
+            ::close(cn.fd);
+        }
         ::close(tfd_);
         ::close(ep_);
     }
@@ -621,6 +636,8 @@ private:
                 st.latOk.add(latUs);
                 st.q.add(static_cast<int64_t>(q));
                 st.s.add(static_cast<int64_t>(s));
+                st.rest.add(latUs - static_cast<int64_t>(q) - static_cast<int64_t>(s));
+                if (static_cast<double>(q) > c_.qThreshMs * 1000.0) ++st.qOver;
             }
             ++b.ok[slot->cls];
             b.latSum[slot->cls] += static_cast<double>(latUs);
@@ -761,7 +778,22 @@ int main(int argc, char** argv) {
     uint64_t connected = 0;
     for (auto& w : workers) connected += w->result().connected;
     std::printf("[loadgen] connected %llu/%d\n", static_cast<unsigned long long>(connected), c.conns);
-    t0.store(nowNs() + 500'000'000LL);   // 0.5초 뒤 동시에 시작
+    if (static_cast<double>(connected) < c.minConnFrac * c.conns) {
+        std::printf("[loadgen] 오류: 연결 성공률 %.3f < %.3f — 부하를 걸지 않고 종료\n",
+                    static_cast<double>(connected) / c.conns, c.minConnFrac);
+        std::fflush(stdout);
+        _exit(3);
+    }
+    const int64_t t0Mono = nowNs() + 500'000'000LL;   // 0.5초 뒤 동시에 시작
+    double        t0Epoch;
+    {
+        timespec rt;
+        clock_gettime(CLOCK_REALTIME, &rt);
+        const int64_t monoNow = nowNs();
+        t0Epoch = static_cast<double>(rt.tv_sec) + static_cast<double>(rt.tv_nsec) * 1e-9
+                  + static_cast<double>(t0Mono - monoNow) * 1e-9;
+    }
+    t0.store(t0Mono);
     for (auto& t : threads) t.join();
 
     // ── 집계 ──
@@ -833,6 +865,13 @@ int main(int argc, char** argv) {
                 genLag.pct(0.99) / 1e3, static_cast<double>(genLag.max) / 1e3,
                 static_cast<unsigned long long>(unknown), static_cast<unsigned long long>(disc),
                 static_cast<unsigned long long>(all.lost), idc10, idc100, idc1s);
+    for (int k = 0; k < 2; ++k) {
+        const ClassStats& s = total[k];
+        if (s.ok == 0) continue;
+        std::printf("%-8s q>%.0fms=%.3f%%  rest(lat-q-s) p50=%.2fms p99=%.2fms\n", names[k],
+                    c.qThreshMs, 100.0 * s.qOver / static_cast<double>(s.ok),
+                    s.rest.pct(0.5) / 1e3, s.rest.pct(0.99) / 1e3);
+    }
     if (genLag.pct(0.99) > 10'000)
         std::printf("경고: 생성기 송신 지연 p99 > 10ms — 생성기 포화. 결과의 지연에 생성기 몫이 섞임\n");
 
@@ -845,12 +884,15 @@ int main(int argc, char** argv) {
                          "conns,sent,ok,shed,late,timeout,skipped,lost,"
                          "lat_p50_ms,lat_p99_ms,lat_p999_ms,lat_max_ms,latok_p99_ms,"
                          "q_p50_ms,q_p99_ms,q_p999_ms,q_max_ms,s_p50_us,s_p99_us,"
-                         "gen_lag_p99_ms,idc_10ms,idc_100ms,idc_1s\n");
+                         "gen_lag_p99_ms,idc_10ms,idc_100ms,idc_1s,"
+                         "q_thr_ms,q_over,rest_p50_ms,rest_p99_ms,t0_epoch,warmup_s,duration_s,"
+                         "connected,disconnects\n");
             for (int k = 0; k < 3; ++k) {
                 const ClassStats& s = *rows[k];
                 std::fprintf(f,
                              "%s,%s,%.1f,%.6f,%.0f,%s,%.3f,%.2f,%.2f,%d,%llu,%llu,%llu,%llu,%llu,%llu,%llu,"
-                             "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f,%.1f,%.3f,%.3f,%.3f,%.3f\n",
+                             "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f,%.1f,%.3f,%.3f,%.3f,%.3f,"
+                             "%.1f,%llu,%.3f,%.3f,%.3f,%.1f,%.1f,%llu,%llu\n",
                              c.label.c_str(), names[k], c.rate, c.complexFrac, c.workUs,
                              c.workExp ? "exp" : "fixed", c.syncFrac, c.syncWidth, c.syncPeriod,
                              c.conns, static_cast<unsigned long long>(s.sent),
@@ -864,7 +906,11 @@ int main(int argc, char** argv) {
                              static_cast<double>(s.lat.max) / 1e3, s.latOk.pct(0.99) / 1e3,
                              s.q.pct(0.5) / 1e3, s.q.pct(0.99) / 1e3, s.q.pct(0.999) / 1e3,
                              static_cast<double>(s.q.max) / 1e3, s.s.pct(0.5), s.s.pct(0.99),
-                             genLag.pct(0.99) / 1e3, idc10, idc100, idc1s);
+                             genLag.pct(0.99) / 1e3, idc10, idc100, idc1s, c.qThreshMs,
+                             static_cast<unsigned long long>(s.qOver), s.rest.pct(0.5) / 1e3,
+                             s.rest.pct(0.99) / 1e3, t0Epoch, c.warmup, c.duration,
+                             static_cast<unsigned long long>(connected),
+                             static_cast<unsigned long long>(disc));
             }
             std::fclose(f);
         }

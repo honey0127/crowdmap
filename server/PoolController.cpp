@@ -37,7 +37,8 @@ PoolController::PoolController(std::vector<ClassConfig> classes, ControllerParam
         } else {
             std::fprintf(csv_,
                          "t_s,cls,q,k,l,c,want,c_ss,c_b,c_max,lam,mu,cs2,s_hat,s_sigma,rho,k_floor,"
-                         "d_off,d_shed,d_done,d_exp,wait_ms,svc_us,chunks\n");
+                         "d_off,d_shed,d_done,d_exp,wait_ms,svc_us,chunks,"
+                         "epoch_s,cpu_s,reactor_cpu_s,proc_cpu_s\n");
         }
     }
 }
@@ -81,6 +82,16 @@ void PoolController::loop() {
         if (dt <= 0.0) continue;
 
         const double nowSec = static_cast<double>(nowNs - t0Ns_) * 1e-9;
+        if (csv_) {
+            auto secOf = [](clockid_t cid) {
+                timespec ts;
+                if (clock_gettime(cid, &ts) != 0) return 0.0;
+                return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
+            };
+            epochSec_      = secOf(CLOCK_REALTIME);
+            procCpuSec_    = secOf(CLOCK_PROCESS_CPUTIME_ID);
+            reactorCpuSec_ = hasReactorClock_ ? secOf(reactorClock_) : 0.0;
+        }
         for (auto& st : states_) tick(st, nowSec, dt);
 
         if (csv_ && ++ticks % 100 == 0) std::fflush(csv_);
@@ -258,10 +269,11 @@ void PoolController::writeRow(const State& st, const PoolSnapshot& s, const Deci
     if (!csv_) return;
     std::fprintf(csv_,
                  "%.3f,%s,%zu,%zu,%.1f,%d,%d,%d,%d,%d,%.1f,%.1f,%.3f,%.1f,%.1f,%.4f,%.1f,"
-                 "%llu,%llu,%llu,%llu,%.3f,%.1f,%zu\n",
+                 "%llu,%llu,%llu,%llu,%.3f,%.1f,%zu,%.3f,%.4f,%.4f,%.4f\n",
                  now, st.cfg.pool->name().c_str(), d.q, d.k, d.l, st.c, d.want, d.cSs, d.cB,
                  st.cMaxEff, d.lam, d.mu, d.cs2, d.sHat, d.sSigma, d.rho, d.kFloor,
                  static_cast<unsigned long long>(dOff), static_cast<unsigned long long>(dShed),
                  static_cast<unsigned long long>(dDone), static_cast<unsigned long long>(dExp),
-                 meanWait, meanSvc, s.chunks);
+                 meanWait, meanSvc, s.chunks, epochSec_, st.cfg.pool->cpuSeconds(),
+                 reactorCpuSec_, procCpuSec_);
 }

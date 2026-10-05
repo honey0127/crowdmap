@@ -7,6 +7,7 @@
 #include <chrono>
 #include <csignal>
 #include <algorithm>
+#include <pthread.h>
 #include <sys/resource.h>
 #include <curl/curl.h>
 
@@ -264,6 +265,12 @@ int main() {
 
     PoolController controller(ctrlClasses, ctrlParams, ps.csvPath,
                               cpuPlan.pin ? cpuPlan.reactorCpus : std::vector<int>{});
+    {
+        // server.run() 이 이 스레드에서 돌므로 이 스레드의 CPU 시계 = 리액터 CPU 시간
+        clockid_t reactorClock;
+        if (pthread_getcpuclockid(pthread_self(), &reactorClock) == 0)
+            controller.setReactorClock(reactorClock);
+    }
     controller.start();
     if (!ps.csvPath.empty()) Log::info("Controller CSV: " + ps.csvPath);
 
